@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Dance Sync</title>
+  <style>
+    :root {
+      --bg: #111;
+      --fg: #fff;
+      --primary: #ff4081;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    h1 { margin: 1rem 0; }
+
+    /* ── layout ────────────────────────────────────────────── */
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 0 1rem 1rem;
+    }
+    #main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      width: 100%;
+      padding-bottom: 2rem;
+    }
+
+    /* ── player + gif ──────────────────────────────────────── */
+    #player {
+      flex: 1 1 480px;
+      max-width: 640px;
+      aspect-ratio: 16/9;
+    }
+    #dance {
+      flex: 0 0 300px;
+      width: 300px;
+      height: auto;
+      animation: pulse 0.5s infinite ease-in-out;
+      border-radius: 6px;
+      box-shadow: 0 0 20px #0008;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    /* ── minimal form styles ───────────────────────────────── */
+    input[type="text"], input[type="number"] {
+      padding: .5rem .75rem;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #222;
+      color: var(--fg);
+      outline: none;
+    }
+    button {
+      padding: .5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      background: var(--primary);
+      color: var(--fg);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { opacity: .9; }
+    #bpmDisplay { margin-left: .5rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>YouTube Dance Sync</h1>
+
+  <form id="controls">
+    <input type="text" id="videoInput" placeholder="YouTube URL / ID / search term…" required>
+    <input type="number" id="bpmInput" placeholder="BPM (optional)" min="40" max="300">
+    <button type="submit">Play ▶</button>
+    <span id="bpmDisplay"></span>
+  </form>
+
+  <div id="main">
+    <div id="player"></div>
+    <img src="dance.gif" id="dance" alt="Dancing GIF">
+  </div>
+
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    /*──────────────────────────────────────────────────────────
+      Basic helpers
+    ──────────────────────────────────────────────────────────*/
+    const $ = sel => document.querySelector(sel);
+    const videoInput = $('#videoInput');
+    const bpmInput   = $('#bpmInput');
+    const bpmDisplay = $('#bpmDisplay');
+    const dance      = $('#dance');
+    let   player, bpm = 120; // default
+
+    /*──────────────────────────────────────────────────────────
+      YouTube API bootstrap
+    ──────────────────────────────────────────────────────────*/
+    function onYouTubeIframeAPIReady () {
+      player = new YT.Player('player', {
+        width: 640,
+        height: 360,
+        videoId: '',
+        playerVars: { origin: location.origin },
+        events: {
+          onReady: () => {
+            $('#controls').addEventListener('submit', handleSubmit);
+          }
+        }
+      });
+    }
+
+    /*──────────────────────────────────────────────────────────
+      Form submission: load video / playlist
+    ──────────────────────────────────────────────────────────*/
+    async function handleSubmit (e) {
+      e.preventDefault();
+      const query = videoInput.value.trim();
+      const manualBpm = parseInt(bpmInput.value, 10);
+
+      if (manualBpm > 0) updateGifSpeed(manualBpm);
+
+      const id = extractVideoID(query);
+      if (id) {
+        await loadVideoById(id, manualBpm);
+      } else {
+        // Fallback: search playlist inside the player
+        player.loadPlaylist({ listType: 'search', list: query });
+      }
+    }
+
+    /*──────────────────────────────────────────────────────────
+      Video helpers
+    ──────────────────────────────────────────────────────────*/
+    function extractVideoID (input) {
+      // Matches youtu.be/xxxxxx or ?v=xxxxxx or 11‑char ID
+      const m = input.match(/(?:v=|\.be\/)([\w-]{11})/);
+      if (m) return m[1];
+      return input.length === 11 ? input : null;
+    }
+
+    async function loadVideoById (id, manualBpm) {
+      player.loadVideoById(id);
+
+      // Try to auto‑detect BPM from the video title using Noembed
+      try {
+        const res   = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${id}`);
+        const data  = await res.json();
+        const title = data.title || '';
+        const m     = title.match(/(\d{2,3})\s?bpm/i);
+        const found = m ? parseInt(m[1], 10) : null;
+        updateGifSpeed(found || manualBpm || bpm);
+      } catch (err) {
+        console.error('Title lookup failed', err);
+        updateGifSpeed(manualBpm || bpm);
+      }
+    }
+
+    /*──────────────────────────────────────────────────────────
+      GIF animation control
+    ──────────────────────────────────────────────────────────*/
+    function updateGifSpeed (newBpm) {
+      if (!newBpm || newBpm < 40 || newBpm > 300) return; // sanity‑check
+      bpm = newBpm;
+      const beatDur = 60 / bpm; // seconds per beat
+      dance.style.animationDuration = `${beatDur}s`;
+      bpmDisplay.textContent = `${bpm} BPM`;
+    }
+  </script>
+</body>
+</html>
