@@ -1,115 +1,311 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>YouTube + Dancer BPM Sync</title>
-<style>
-  *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,sans-serif}
-  body{margin:0;padding:1rem;background:#111;color:#eee}
-  h1{margin:0 0 .5rem;font-size:1.4rem;text-align:center}
-  .row{display:flex;gap:1rem;align-items:flex-start}
-  #playerBox,#gifBox{flex:1}
-  #gifBox canvas{max-width:100%;height:auto;border:2px solid #444;border-radius:6px}
-  #controls{margin:.5rem 0;text-align:center}
-  input[type=text]{width:70%;max-width:420px;padding:.4rem;border-radius:4px;border:1px solid #555;background:#222;color:#eee}
-  button{padding:.45rem .8rem;margin-left:.4rem;border:none;border-radius:4px;background:#e91e63;color:#fff;cursor:pointer}
-  button:hover{background:#ff2d75}
-  small{display:block;margin-top:.4rem;color:#aaa}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Synced Dancer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        #controls {
+            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        }
+
+        #controls label,
+        #controls input,
+        #controls button {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+         #controls input[type="text"] {
+            flex-grow: 1; /* Allow URL input to take more space */
+            min-width: 200px;
+        }
+        #controls input[type="number"] {
+            width: 70px;
+        }
+        #controls button {
+            background-color: #dc3545;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        #controls button:hover {
+            background-color: #c82333;
+        }
+
+        #content-wrapper {
+            display: flex;
+            justify-content: space-around; /* Distribute space */
+            align-items: flex-start; /* Align items to the top */
+            width: 100%;
+            max-width: 1200px; /* Max width for content */
+            gap: 20px; /* Space between player and GIF */
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        }
+
+        #youtube-player-container,
+        #gif-container {
+            flex: 1; /* Allow them to grow */
+            min-width: 300px; /* Minimum width before wrapping */
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center; /* Center GIF */
+        }
+
+        /* Container specifically for the YT Player iframe to maintain aspect ratio */
+        #youtube-player {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+            max-width: 100%;
+            background: #000; /* Black background while loading */
+        }
+
+        #youtube-player iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none; /* Remove default iframe border */
+        }
+
+
+        #dance-gif {
+            max-width: 100%;
+            height: auto;
+            display: block; /* Prevents extra space below */
+            margin: 20px auto 0; /* Add some top margin */
+
+            /* --- Animation for Sync Effect --- */
+            animation-name: pulse;
+            animation-iteration-count: infinite;
+            animation-timing-function: ease-in-out;
+            /* Default duration (120 BPM = 0.5s per beat) */
+            animation-duration: 0.5s;
+            /* Start paused */
+            animation-play-state: paused;
+        }
+
+        /* Define the pulse animation */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.04); } /* Slight pulse */
+            100% { transform: scale(1); }
+        }
+
+        /* Media query for smaller screens */
+         @media (max-width: 768px) {
+            #content-wrapper {
+                flex-direction: column;
+                align-items: center;
+            }
+            #youtube-player-container,
+            #gif-container {
+                 width: 90%; /* Take more width when stacked */
+                 max-width: 500px; /* Limit max width when stacked */
+                 min-width: unset;
+            }
+             #controls {
+                 flex-direction: column;
+                 align-items: stretch;
+             }
+              #controls input[type="text"] {
+                 width: auto; /* Let it fill container */
+             }
+        }
+
+    </style>
 </head>
 <body>
-<h1>🎧 Pick a YouTube track &amp; watch the dancer match its BPM</h1>
 
-<div id="controls">
-  <form id="searchForm">
-    <input id="query" type="text" placeholder="Search YouTube or paste a full URL" required/>
-    <button type="submit">Play ▶</button>
-  </form>
-  <small>Tip: if the video title contains “123 BPM”, the dancer will auto‑sync.<br>
-        Otherwise enter a BPM manually here → <input id="manualBpm" type="number" min="40" max="250" step="1" placeholder="BPM"> </small>
-</div>
+    <h1>YouTube Synced Dancer</h1>
 
-<div class="row">
-  <div id="playerBox">
-    <!-- The YouTube player will appear here -->
-    <div id="player"></div>
-  </div>
+    <div id="controls">
+        <label for="video-url">YouTube URL or ID:</label>
+        <input type="text" id="video-url" placeholder="e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ or dQw4w9WgXcQ">
+        <button id="load-button">Load Video</button>
 
-  <div id="gifBox">
-    <!-- dance.gif rendered onto canvas so we can change playback speed -->
-    <canvas id="danceCanvas"></canvas>
-  </div>
-</div>
+        <label for="bpm-input">Music BPM:</label>
+        <input type="number" id="bpm-input" value="120" min="1">
+        <span>(Beats Per Minute)</span>
+    </div>
 
-<!-- ▶ YouTube IFrame API -->
-<script src="https://www.youtube.com/iframe_api"></script>
-<!-- ▶ gifler (renders GIF → canvas with playback control) -->
-<script src="https://cdn.jsdelivr.net/npm/gifler@0.1.0/build/gifler.min.js"></script>
+    <div id="content-wrapper">
+        <div id="youtube-player-container">
+            <div id="youtube-player"></div> <!-- YT API will replace this -->
+             <p style="font-size: 0.8em; color: #666; margin-top: 10px;">YouTube Player</p>
+        </div>
 
-<script>
-/* ---------- 1. Load & prepare the dancer GIF ---------- */
-let gifController, defaultFPS=24;    // updated after GIF loads
+        <div id="gif-container">
+            <img id="dance-gif" src="dance.gif" alt="Dancing GIF">
+             <p style="font-size: 0.8em; color: #666; margin-top: 10px;">Dancing GIF</p>
+        </div>
+    </div>
 
-gifler('dance.gif').get((anim) => {
-  const canvas = document.getElementById('danceCanvas');
-  anim.animateInCanvas(canvas);
-  gifController = anim;                         // keep reference
-  defaultFPS = anim._frames.length / (anim._duration/1000); // frames per second
-});
+    <script>
+        // --- YouTube Player API Setup ---
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
-/* ---------- 2. YouTube Player setup ---------- */
-let player;
-function onYouTubeIframeAPIReady(){
-  player = new YT.Player('player', {
-    height:'360', width:'640',
-    videoId:'',            // empty until user searches
-    playerVars:{ autoplay:1, rel:0, modestbranding:1 },
-    events:{ onStateChange:onPlayerStateChange }
-  });
-}
+        var player;
+        var initialVideoId = 'dQw4w9WgXcQ'; // Default video (Rick Astley!)
 
-/* ---------- 3. Respond to play / change events ---------- */
-function onPlayerStateChange(event){
-  if(event.data === YT.PlayerState.PLAYING){
-    syncGifWithBpm();
-  }
-}
+        // This function creates an <iframe> (and YouTube player)
+        // after the API code downloads.
+        function onYouTubeIframeAPIReady() {
+            console.log("YouTube API Ready");
+            player = new YT.Player('youtube-player', {
+                // height and width will be controlled by CSS container aspect ratio
+                videoId: initialVideoId,
+                playerVars: {
+                    'playsinline': 1 // Important for mobile playback
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
 
-/* ---------- 4. Estimate BPM & sync ---------- */
-function parseBpmFromTitle(title){
-  const match = title.match(/(\d{2,3})\s*bpm/i);
-  return match ? +(match[1]) : null;
-}
+        // The API will call this function when the video player is ready.
+        function onPlayerReady(event) {
+            console.log("Player Ready");
+            // You could optionally play the video automatically here:
+            // event.target.playVideo();
 
-function syncGifWithBpm(){
-  const title = player.getVideoData().title || '';
-  let bpm = parseBpmFromTitle(title);
+            // Initial sync of GIF animation speed based on default BPM
+             setupGifSync();
+        }
 
-  // fallback to manual bpm input
-  const manual = +document.getElementById('manualBpm').value;
-  if(!bpm && manual) bpm = manual;
+        // --- GIF Sync Logic ---
+        const bpmInputElement = document.getElementById('bpm-input');
+        const gifElement = document.getElementById('dance-gif');
 
-  if(bpm && gifController){
-    const speed = bpm / 120;                // 120 BPM ≙ GIF’s native pace
-    gifController.setSpeed(speed);          // gifler: 1.0 = normal
-  }
-}
+        function setupGifSync() {
+            // Initial sync based on the input field's default value
+             updateGifAnimationSpeed();
 
-/* ---------- 5. Mini search/URL loader ---------- */
-document.getElementById('searchForm').addEventListener('submit', (e)=>{
-  e.preventDefault();
-  const q = document.getElementById('query').value.trim();
-  if(!q) return;
+            // Add listener to update speed when BPM input changes
+            bpmInputElement.addEventListener('input', updateGifAnimationSpeed);
+        }
 
-  if(q.startsWith('http')){
-    // full YouTube URL ⇒ extract v=
-    const id = (new URL(q)).searchParams.get('v');
-    if(id) player.loadVideoById(id);
-  }else{
-    // search query ⇒ create on‑the‑fly playlist using listType=search
-    player.loadPlaylist({listType:'search', list:q, index:0});
-  }
-});
-</script>
+        function updateGifAnimationSpeed() {
+            const bpm = parseInt(bpmInputElement.value, 10);
+            if (bpm && bpm > 0) {
+                // Calculate duration of one beat in seconds
+                const beatDuration = 60 / bpm;
+                // Apply it to the CSS animation duration
+                gifElement.style.animationDuration = `${beatDuration}s`;
+                console.log(`Set GIF animation duration to ${beatDuration.toFixed(3)}s for ${bpm} BPM`);
+
+                 // If video is currently playing, ensure animation is running
+                if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
+                     gifElement.style.animationPlayState = 'running';
+                }
+
+            } else {
+                console.log("Invalid BPM value, pausing animation.");
+                gifElement.style.animationPlayState = 'paused'; // Pause if BPM is invalid
+            }
+        }
+
+        // The API calls this function when the player's state changes.
+        function onPlayerStateChange(event) {
+            console.log("Player State Change:", event.data);
+            if (event.data == YT.PlayerState.PLAYING) {
+                console.log("Video Playing - Starting GIF Animation");
+                updateGifAnimationSpeed(); // Ensure speed is correct for current BPM
+                gifElement.style.animationPlayState = 'running'; // Start the CSS pulse animation
+            } else {
+                 console.log("Video Paused/Ended/Other - Pausing GIF Animation");
+                gifElement.style.animationPlayState = 'paused'; // Pause the CSS pulse animation
+            }
+        }
+
+        // --- Video Loading Logic ---
+        const videoUrlElement = document.getElementById('video-url');
+        const loadButtonElement = document.getElementById('load-button');
+
+        loadButtonElement.addEventListener('click', loadVideoFromInput);
+         // Optional: Allow pressing Enter in the input field to load
+         videoUrlElement.addEventListener('keypress', function(event) {
+             if (event.key === 'Enter') {
+                event.preventDefault(); // Prevent potential form submission
+                loadVideoFromInput();
+            }
+         });
+
+
+        function loadVideoFromInput() {
+            const input = videoUrlElement.value.trim();
+            const videoId = extractVideoID(input);
+
+            if (videoId && player && typeof player.loadVideoById === 'function') {
+                 console.log("Loading video ID:", videoId);
+                player.loadVideoById(videoId);
+                 // Optional: Clear the input field after loading
+                 // videoUrlElement.value = '';
+            } else if (!videoId) {
+                alert("Could not find a valid YouTube Video ID in the input.");
+            } else {
+                 alert("YouTube player is not ready yet. Please wait a moment and try again.");
+            }
+        }
+
+        // Helper function to extract YouTube video ID from various URL formats or just the ID itself
+        function extractVideoID(input) {
+            if (!input) return null;
+
+            // Regular expression to cover common YouTube URL patterns and standalone IDs
+            const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})|^([a-zA-Z0-9_-]{11})$/;
+            const match = input.match(regex);
+
+            // Return the first captured group (URL format) or the second (standalone ID)
+            return match ? (match[1] || match[2]) : null;
+        }
+
+         // Make sure initial setup runs after the DOM is fully loaded,
+         // though API readiness might take longer. PlayerReady handles initial sync.
+         document.addEventListener('DOMContentLoaded', () => {
+             // Set placeholder with the default video ID for clarity
+             if(initialVideoId) {
+                videoUrlElement.placeholder = `e.g., https://www.youtube.com/watch?v=${initialVideoId} or ${initialVideoId}`;
+             }
+             // Call setupGifSync early to attach the input listener.
+             // The actual animation speed update and play state control happens in onPlayerReady/onPlayerStateChange
+             setupGifSync();
+         });
+
+    </script>
+
 </body>
 </html>
