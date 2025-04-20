@@ -1,190 +1,115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>YouTube Dance Sync</title>
-  <style>
-    :root {
-      --bg: #111;
-      --fg: #fff;
-      --primary: #ff4081;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--fg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
-    }
-    h1 { margin: 1rem 0; }
-
-    /* ── layout ────────────────────────────────────────────── */
-    #controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .5rem;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      padding: 0 1rem 1rem;
-    }
-    #main {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 1.5rem;
-      flex-wrap: wrap;
-      width: 100%;
-      padding-bottom: 2rem;
-    }
-
-    /* ── player + gif ──────────────────────────────────────── */
-    #player {
-      flex: 1 1 480px;
-      max-width: 640px;
-      aspect-ratio: 16/9;
-    }
-    #dance {
-      flex: 0 0 300px;
-      width: 300px;
-      height: auto;
-      animation: pulse 0.5s infinite ease-in-out;
-      border-radius: 6px;
-      box-shadow: 0 0 20px #0008;
-    }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-    }
-
-    /* ── minimal form styles ───────────────────────────────── */
-    input[type="text"], input[type="number"] {
-      padding: .5rem .75rem;
-      border-radius: 4px;
-      border: 1px solid #444;
-      background: #222;
-      color: var(--fg);
-      outline: none;
-    }
-    button {
-      padding: .5rem 1rem;
-      border: none;
-      border-radius: 4px;
-      background: var(--primary);
-      color: var(--fg);
-      font-weight: 600;
-      cursor: pointer;
-    }
-    button:hover { opacity: .9; }
-    #bpmDisplay { margin-left: .5rem; font-weight: bold; }
-  </style>
+<meta charset="utf-8">
+<title>YouTube + Dancer BPM Sync</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{margin:0;padding:1rem;background:#111;color:#eee}
+  h1{margin:0 0 .5rem;font-size:1.4rem;text-align:center}
+  .row{display:flex;gap:1rem;align-items:flex-start}
+  #playerBox,#gifBox{flex:1}
+  #gifBox canvas{max-width:100%;height:auto;border:2px solid #444;border-radius:6px}
+  #controls{margin:.5rem 0;text-align:center}
+  input[type=text]{width:70%;max-width:420px;padding:.4rem;border-radius:4px;border:1px solid #555;background:#222;color:#eee}
+  button{padding:.45rem .8rem;margin-left:.4rem;border:none;border-radius:4px;background:#e91e63;color:#fff;cursor:pointer}
+  button:hover{background:#ff2d75}
+  small{display:block;margin-top:.4rem;color:#aaa}
+</style>
 </head>
 <body>
-  <h1>YouTube Dance Sync</h1>
+<h1>🎧 Pick a YouTube track &amp; watch the dancer match its BPM</h1>
 
-  <form id="controls">
-    <input type="text" id="videoInput" placeholder="YouTube URL / ID / search term…" required>
-    <input type="number" id="bpmInput" placeholder="BPM (optional)" min="40" max="300">
-    <button type="submit">Play ▶</button>
-    <span id="bpmDisplay"></span>
+<div id="controls">
+  <form id="searchForm">
+    <input id="query" type="text" placeholder="Search YouTube or paste a full URL" required/>
+    <button type="submit">Play ▶</button>
   </form>
+  <small>Tip: if the video title contains “123 BPM”, the dancer will auto‑sync.<br>
+        Otherwise enter a BPM manually here → <input id="manualBpm" type="number" min="40" max="250" step="1" placeholder="BPM"> </small>
+</div>
 
-  <div id="main">
+<div class="row">
+  <div id="playerBox">
+    <!-- The YouTube player will appear here -->
     <div id="player"></div>
-    <img src="dance.gif" id="dance" alt="Dancing GIF">
   </div>
 
-  <!-- YouTube IFrame API -->
-  <script src="https://www.youtube.com/iframe_api"></script>
-  <script>
-    /*──────────────────────────────────────────────────────────
-      Basic helpers
-    ──────────────────────────────────────────────────────────*/
-    const $ = sel => document.querySelector(sel);
-    const videoInput = $('#videoInput');
-    const bpmInput   = $('#bpmInput');
-    const bpmDisplay = $('#bpmDisplay');
-    const dance      = $('#dance');
-    let   player, bpm = 120; // default
+  <div id="gifBox">
+    <!-- dance.gif rendered onto canvas so we can change playback speed -->
+    <canvas id="danceCanvas"></canvas>
+  </div>
+</div>
 
-    /*──────────────────────────────────────────────────────────
-      YouTube API bootstrap
-    ──────────────────────────────────────────────────────────*/
-    function onYouTubeIframeAPIReady () {
-      player = new YT.Player('player', {
-        width: 640,
-        height: 360,
-        videoId: '',
-        playerVars: { origin: location.origin },
-        events: {
-          onReady: () => {
-            $('#controls').addEventListener('submit', handleSubmit);
-          }
-        }
-      });
-    }
+<!-- ▶ YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+<!-- ▶ gifler (renders GIF → canvas with playback control) -->
+<script src="https://cdn.jsdelivr.net/npm/gifler@0.1.0/build/gifler.min.js"></script>
 
-    /*──────────────────────────────────────────────────────────
-      Form submission: load video / playlist
-    ──────────────────────────────────────────────────────────*/
-    async function handleSubmit (e) {
-      e.preventDefault();
-      const query = videoInput.value.trim();
-      const manualBpm = parseInt(bpmInput.value, 10);
+<script>
+/* ---------- 1. Load & prepare the dancer GIF ---------- */
+let gifController, defaultFPS=24;    // updated after GIF loads
 
-      if (manualBpm > 0) updateGifSpeed(manualBpm);
+gifler('dance.gif').get((anim) => {
+  const canvas = document.getElementById('danceCanvas');
+  anim.animateInCanvas(canvas);
+  gifController = anim;                         // keep reference
+  defaultFPS = anim._frames.length / (anim._duration/1000); // frames per second
+});
 
-      const id = extractVideoID(query);
-      if (id) {
-        await loadVideoById(id, manualBpm);
-      } else {
-        // Fallback: search playlist inside the player
-        player.loadPlaylist({ listType: 'search', list: query });
-      }
-    }
+/* ---------- 2. YouTube Player setup ---------- */
+let player;
+function onYouTubeIframeAPIReady(){
+  player = new YT.Player('player', {
+    height:'360', width:'640',
+    videoId:'',            // empty until user searches
+    playerVars:{ autoplay:1, rel:0, modestbranding:1 },
+    events:{ onStateChange:onPlayerStateChange }
+  });
+}
 
-    /*──────────────────────────────────────────────────────────
-      Video helpers
-    ──────────────────────────────────────────────────────────*/
-    function extractVideoID (input) {
-      // Matches youtu.be/xxxxxx or ?v=xxxxxx or 11‑char ID
-      const m = input.match(/(?:v=|\.be\/)([\w-]{11})/);
-      if (m) return m[1];
-      return input.length === 11 ? input : null;
-    }
+/* ---------- 3. Respond to play / change events ---------- */
+function onPlayerStateChange(event){
+  if(event.data === YT.PlayerState.PLAYING){
+    syncGifWithBpm();
+  }
+}
 
-    async function loadVideoById (id, manualBpm) {
-      player.loadVideoById(id);
+/* ---------- 4. Estimate BPM & sync ---------- */
+function parseBpmFromTitle(title){
+  const match = title.match(/(\d{2,3})\s*bpm/i);
+  return match ? +(match[1]) : null;
+}
 
-      // Try to auto‑detect BPM from the video title using Noembed
-      try {
-        const res   = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${id}`);
-        const data  = await res.json();
-        const title = data.title || '';
-        const m     = title.match(/(\d{2,3})\s?bpm/i);
-        const found = m ? parseInt(m[1], 10) : null;
-        updateGifSpeed(found || manualBpm || bpm);
-      } catch (err) {
-        console.error('Title lookup failed', err);
-        updateGifSpeed(manualBpm || bpm);
-      }
-    }
+function syncGifWithBpm(){
+  const title = player.getVideoData().title || '';
+  let bpm = parseBpmFromTitle(title);
 
-    /*──────────────────────────────────────────────────────────
-      GIF animation control
-    ──────────────────────────────────────────────────────────*/
-    function updateGifSpeed (newBpm) {
-      if (!newBpm || newBpm < 40 || newBpm > 300) return; // sanity‑check
-      bpm = newBpm;
-      const beatDur = 60 / bpm; // seconds per beat
-      dance.style.animationDuration = `${beatDur}s`;
-      bpmDisplay.textContent = `${bpm} BPM`;
-    }
-  </script>
+  // fallback to manual bpm input
+  const manual = +document.getElementById('manualBpm').value;
+  if(!bpm && manual) bpm = manual;
+
+  if(bpm && gifController){
+    const speed = bpm / 120;                // 120 BPM ≙ GIF’s native pace
+    gifController.setSpeed(speed);          // gifler: 1.0 = normal
+  }
+}
+
+/* ---------- 5. Mini search/URL loader ---------- */
+document.getElementById('searchForm').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const q = document.getElementById('query').value.trim();
+  if(!q) return;
+
+  if(q.startsWith('http')){
+    // full YouTube URL ⇒ extract v=
+    const id = (new URL(q)).searchParams.get('v');
+    if(id) player.loadVideoById(id);
+  }else{
+    // search query ⇒ create on‑the‑fly playlist using listType=search
+    player.loadPlaylist({listType:'search', list:q, index:0});
+  }
+});
+</script>
 </body>
 </html>
