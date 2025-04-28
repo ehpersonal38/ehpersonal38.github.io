@@ -7,7 +7,7 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FFmpeg.wasm UMD build -->
-  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js"></script>
+  <script crossOrigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-6 gap-6">
   <h1 class="text-3xl font-bold mb-4">Local Video Editor</h1>
@@ -187,7 +187,7 @@
         previewBtn.onclick = ()=> playRange(seg.start, seg.end);
 
         const delBtn = document.createElement('button');
-        delBtn.textContent = '×';
+        delBtn.textContent = 'Ã—';
         delBtn.title = 'Remove Segment';
         delBtn.className = 'text-red-600 text-xl font-bold';
         delBtn.onclick = ()=>{ segments.splice(idx,1); renderSegments(); };
@@ -214,12 +214,12 @@
       if (!segments.length) return alert('Add at least one segment');
 
       if (!ff){
-        exportBtn.disabled=true; exportBtn.textContent='Loading FFmpeg…';
+        exportBtn.disabled=true; exportBtn.textContent='Loading FFmpegÂ…';
         try { ff = await initFFmpeg(); }
         catch(err){ console.error(err); return alert('FFmpeg failed to load'); }
       }
 
-      exportBtn.disabled=true; exportBtn.textContent='Processing…';
+      exportBtn.disabled=true; exportBtn.textContent='ProcessingÂ…';
       const ext = videoFile.name.split('.').pop();
       const inputName = 'input.'+ext;
       ff.writeFile(inputName, await ff.fetchFile(videoFile));
