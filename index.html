@@ -399,7 +399,7 @@
     ic.setTransform(dpr, 0, 0, dpr, 0, 0);
     ic.clearRect(0, 0, W, H);
 
-    if (net.ready && drawing && now - lastSend >= 150) { lastSend = now; send(drawing, false); }
+    if (net.ready && drawing && now - lastSend >= 30) { lastSend = now; send(drawing, false); }
 
     var pending = false;
     for (var key in groups) {
@@ -686,7 +686,8 @@
       if (peer !== p) return;
       guests.push(c);
       headcount();
-      post(c, { t: "snap", d: snapshot() });
+      var snap = snapshot();
+      if (snap.length < 200000) post(c, { t: "snap", d: snap });
     });
     c.on("data", function (m) {
       if (peer !== p || !m || typeof m !== "object") return;
@@ -712,7 +713,7 @@
     peer = p; isHost = false;
     p.on("open", function () {
       if (peer !== p) return;
-      var c = p.connect(PREFIX + code, { reliable: true });
+      var c = p.connect(PREFIX + code, { reliable: true, serialization: "json" });   // plain JSON: no packing or chunking delay
       hostConn = c;
       var timer = setTimeout(function () { if (peer === p && !c.open) again(false); }, 15000);
       c.on("open", function () {
