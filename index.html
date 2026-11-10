@@ -1,311 +1,820 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Synced Dancer</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            background-color: #f0f0f0;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Ink to Watercolor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Karla:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout idea: the whole screen is one sheet of primed canvas; a hint sits at the top, a small paint tray floats at the bottom. Single light theme on purpose. */
+  :root {
+    color-scheme: light;
+    --sheet: #e9e8e2;        /* primed canvas */
+    --graphite: #2e2d38;     /* wet ink and text */
+    --graphite-soft: #6d6c76;
+    --tray: rgba(250, 250, 247, 0.86);
+    --tray-edge: rgba(46, 45, 56, 0.16);
+    --focus: #2f55c9;
+    --here: #3f8f5b;         /* someone else is on the sheet */
+    --font: "Karla", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--sheet);
+    color: var(--graphite);
+    font-family: var(--font);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #stage { position: relative; width: 100%; height: 100%; isolation: isolate; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #stain, #paint { mix-blend-mode: multiply; pointer-events: none; }
+  #ink { touch-action: none; cursor: crosshair; }
 
-        h1 {
-            margin-bottom: 20px;
-            color: #333;
-        }
+  #hint {
+    position: absolute; top: 18px; left: 20px; right: 20px;
+    margin: 0; max-width: 34ch;
+    font-size: 15px; line-height: 1.4; color: var(--graphite-soft);
+    pointer-events: none;
+    transition: opacity 1.2s ease;
+  }
+  #hint strong { display: block; font-weight: 600; color: var(--graphite); font-size: 17px; margin-bottom: 2px; }
+  #hint.quiet { opacity: 0.32; }
 
-        #controls {
-            margin-bottom: 20px;
-            background-color: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap; /* Allow wrapping on smaller screens */
-        }
+  #who {
+    position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%);
+    margin: 0; display: flex; align-items: center; gap: 7px;
+    padding: 4px 5px 4px 12px; white-space: nowrap; max-width: calc(100% - 32px);
+    font-size: 13px; color: var(--graphite-soft);
+    background: var(--tray); border: 1px solid var(--tray-edge); border-radius: 999px;
+  }
+  #invite {
+    margin-left: 4px; height: 28px; padding: 0 10px;
+    font: 600 13px var(--font); color: var(--graphite);
+    background: transparent; border: 1px solid var(--tray-edge); border-radius: 999px;
+    cursor: pointer;
+  }
+  #invite:active { background: rgba(46,45,56,0.08); }
+  #who .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--graphite-soft); }
+  #who.on { color: var(--graphite); }
+  #who.on .dot { background: var(--here); border-color: var(--here); }
 
-        #controls label,
-        #controls input,
-        #controls button {
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-        }
-         #controls input[type="text"] {
-            flex-grow: 1; /* Allow URL input to take more space */
-            min-width: 200px;
-        }
-        #controls input[type="number"] {
-            width: 70px;
-        }
-        #controls button {
-            background-color: #dc3545;
-            color: white;
-            cursor: pointer;
-            border: none;
-        }
-        #controls button:hover {
-            background-color: #c82333;
-        }
-
-        #content-wrapper {
-            display: flex;
-            justify-content: space-around; /* Distribute space */
-            align-items: flex-start; /* Align items to the top */
-            width: 100%;
-            max-width: 1200px; /* Max width for content */
-            gap: 20px; /* Space between player and GIF */
-            flex-wrap: wrap; /* Allow wrapping on smaller screens */
-        }
-
-        #youtube-player-container,
-        #gif-container {
-            flex: 1; /* Allow them to grow */
-            min-width: 300px; /* Minimum width before wrapping */
-            background-color: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            text-align: center; /* Center GIF */
-        }
-
-        /* Container specifically for the YT Player iframe to maintain aspect ratio */
-        #youtube-player {
-            position: relative;
-            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
-            height: 0;
-            overflow: hidden;
-            max-width: 100%;
-            background: #000; /* Black background while loading */
-        }
-
-        #youtube-player iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none; /* Remove default iframe border */
-        }
-
-
-        #dance-gif {
-            max-width: 100%;
-            height: auto;
-            display: block; /* Prevents extra space below */
-            margin: 20px auto 0; /* Add some top margin */
-
-            /* --- Animation for Sync Effect --- */
-            animation-name: pulse;
-            animation-iteration-count: infinite;
-            animation-timing-function: ease-in-out;
-            /* Default duration (120 BPM = 0.5s per beat) */
-            animation-duration: 0.5s;
-            /* Start paused */
-            animation-play-state: paused;
-        }
-
-        /* Define the pulse animation */
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.04); } /* Slight pulse */
-            100% { transform: scale(1); }
-        }
-
-        /* Media query for smaller screens */
-         @media (max-width: 768px) {
-            #content-wrapper {
-                flex-direction: column;
-                align-items: center;
-            }
-            #youtube-player-container,
-            #gif-container {
-                 width: 90%; /* Take more width when stacked */
-                 max-width: 500px; /* Limit max width when stacked */
-                 min-width: unset;
-            }
-             #controls {
-                 flex-direction: column;
-                 align-items: stretch;
-             }
-              #controls input[type="text"] {
-                 width: auto; /* Let it fill container */
-             }
-        }
-
-    </style>
+  #tray {
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px;
+    max-width: calc(100% - 32px);
+    padding: 5px 8px 5px 6px;
+    background: var(--tray);
+    border: 1px solid var(--tray-edge);
+    border-radius: 999px;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .pig {
+    width: 40px; height: 40px; padding: 0; border: 0; background: none;
+    display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  }
+  .pig span {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--c);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+    transition: transform 0.15s ease;
+  }
+  .pig[aria-pressed="true"] span {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 2px var(--tray), 0 0 0 4px var(--graphite);
+  }
+  #fresh {
+    margin-left: 6px; height: 36px; padding: 0 14px;
+    font: 600 14px var(--font); color: var(--graphite);
+    background: transparent; border: 1px solid var(--tray-edge); border-radius: 999px;
+    cursor: pointer; white-space: nowrap;
+  }
+  #fresh:active { background: rgba(46,45,56,0.08); }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    #hint, .pig span { transition: none; }
+  }
+</style>
 </head>
 <body>
+<div id="stage">
+  <canvas id="paper" aria-hidden="true"></canvas>
+  <canvas id="stain" aria-hidden="true"></canvas>
+  <canvas id="paint" aria-hidden="true"></canvas>
+  <canvas id="ink" aria-label="Drawing surface. Write or draw with a finger or mouse."></canvas>
 
-    <h1>YouTube Synced Dancer</h1>
+  <p id="hint"><strong>Write or draw anywhere.</strong>About three seconds after you stop, the ink softens into watercolor, slowly spreads, and stains the canvas for good. Send someone the link and they see it as you write.</p>
 
-    <div id="controls">
-        <label for="video-url">YouTube URL or ID:</label>
-        <input type="text" id="video-url" placeholder="e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ or dQw4w9WgXcQ">
-        <button id="load-button">Load Video</button>
+  <div id="who"><span class="dot" aria-hidden="true"></span><span id="who-text" role="status">Connecting</span><button id="invite" type="button">Copy invite link</button></div>
 
-        <label for="bpm-input">Music BPM:</label>
-        <input type="number" id="bpm-input" value="120" min="1">
-        <span>(Beats Per Minute)</span>
-    </div>
+  <div id="tray" role="group" aria-label="Pigment">
+    <button class="pig" id="pig-indigo" style="--c:#3c4c94" aria-label="Indigo" aria-pressed="true"><span></span></button>
+    <button class="pig" id="pig-rose" style="--c:#bb4862" aria-label="Rose madder" aria-pressed="false"><span></span></button>
+    <button class="pig" id="pig-green" style="--c:#5a8c4c" aria-label="Sap green" aria-pressed="false"><span></span></button>
+    <button class="pig" id="pig-ochre" style="--c:#c8952f" aria-label="Yellow ochre" aria-pressed="false"><span></span></button>
+    <button class="pig" id="pig-violet" style="--c:#7b509c" aria-label="Dioxazine violet" aria-pressed="false"><span></span></button>
+    <button id="fresh" type="button">Fresh sheet</button>
+  </div>
+</div>
 
-    <div id="content-wrapper">
-        <div id="youtube-player-container">
-            <div id="youtube-player"></div> <!-- YT API will replace this -->
-             <p style="font-size: 0.8em; color: #666; margin-top: 10px;">YouTube Player</p>
-        </div>
+<script>
+(function () {
+  "use strict";
 
-        <div id="gif-container">
-            <img id="dance-gif" src="dance.gif" alt="Dancing GIF">
-             <p style="font-size: 0.8em; color: #666; margin-top: 10px;">Dancing GIF</p>
-        </div>
-    </div>
+  /* How it works, cheaply:
+     The wash lives on a coarse grid (one cell is about 4 px, so a phone is roughly
+     100 x 210 cells). Each cell holds how much red, green and blue the pigment there
+     absorbs. When you pause, your writing is stamped onto the grid as one even coat.
+     From then on the grid is simply diffused: every cell trades a little pigment with
+     its four neighbours, many small times, so the line widens and pales continuously
+     with no steps. Nothing is ever removed, only spread thinner. The spread starts
+     slowly, speeds up, then eases to a stop; at that point the result is stamped into
+     a permanent stain layer and the grid is emptied. The browser scales the small grid
+     up smoothly and multiplies it over the canvas texture. */
 
-    <script>
-        // --- YouTube Player API Setup ---
-        var tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        var firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+  var WAIT = 3000;       // ms after the pen lifts before ink starts turning
+  var INK_OUT = 1200;    // ms for the dark ink to give way to colour
+  var RISE = 1200;       // ms for colour to come up
+  var SPREAD = 16000;    // ms from first colour to fully soaked in
+  var STRENGTH = 0.8;    // how close the fresh wash is to the full pigment colour
+  var LINE = 10;         // px width of the wash when it first appears
+  var S0 = 5, S1 = 56;   // px softness (blur radius) when fresh and when soaked in
+  var CELL = 4, MAX_CELLS = 60000;
+  var INK = "#2e2d38";
+  var SHEET = "#e9e8e2";
+  var PIGMENTS = ["#3c4c94", "#bb4862", "#5a8c4c", "#c8952f", "#7b509c"];
+  // how strongly each pigment absorbs red, green and blue
+  var ABSORB = PIGMENTS.map(function (hex) {
+    return [1, 3, 5].map(function (i) {
+      return -Math.log(Math.max(parseInt(hex.slice(i, i + 2), 16), 1) / 255);
+    });
+  });
 
-        var player;
-        var initialVideoId = 'dQw4w9WgXcQ'; // Default video (Rick Astley!)
+  var paper = document.getElementById("paper");
+  var stain = document.getElementById("stain");
+  var paint = document.getElementById("paint");
+  var ink = document.getElementById("ink");
+  var pc = paper.getContext("2d");
+  var sx = stain.getContext("2d");
+  var wc = paint.getContext("2d");
+  var ic = ink.getContext("2d");
+  var maskCanvas = document.createElement("canvas");
+  var mx = maskCanvas.getContext("2d", { willReadFrequently: true });
+  var hint = document.getElementById("hint");
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-        // This function creates an <iframe> (and YouTube player)
-        // after the API code downloads.
-        function onYouTubeIframeAPIReady() {
-            console.log("YouTube API Ready");
-            player = new YT.Player('youtube-player', {
-                // height and width will be controlled by CSS container aspect ratio
-                videoId: initialVideoId,
-                playerVars: {
-                    'playsinline': 1 // Important for mobile playback
-                },
-                events: {
-                    'onReady': onPlayerReady,
-                    'onStateChange': onPlayerStateChange
-                }
-            });
+  var W = 0, H = 0, dpr = 1;
+  var GW = 0, GH = 0, N = 0, cellPx = CELL;
+  var A = [null, null, null], B = [null, null, null];   // pigment grid and its spare
+  var img = null;
+  // wet ink not yet turned, kept per writer so each person's pause is timed on its own
+  var me = { strokes: [], active: 0, lastUp: 0, live: null };
+  var groups = { me: me };
+  var seq = 0, lastSend = 0;
+  var washes = [];    // groups whose colour is still coming up
+  var drawing = null;
+  var running = false;
+  var pigment = 0;
+  var touched = false;
+  var wet = false, wetStart = 0, applied = 0;
+
+  function smooth(a, b, x) { var t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+
+  /* Canvas weave: a faint over-under thread grid plus tooth, tiled. */
+  function weaveTile() {
+    var period = Math.max(4, Math.round(3 * dpr));
+    var n = period * 40;
+    var t = document.createElement("canvas");
+    t.width = t.height = n;
+    var c = t.getContext("2d");
+    var im = c.createImageData(n, n), d = im.data, k = 2 * Math.PI / period;
+    for (var y = 0; y < n; y++) {
+      for (var x = 0; x < n; x++) {
+        var s = 0.05 * Math.cos(x * k) * Math.cos(y * k) + 0.06 * (Math.random() - 0.5);
+        var i = (y * n + x) * 4;
+        var v = s > 0 ? 255 : 0;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = Math.abs(s) * 255;
+      }
+    }
+    c.putImageData(im, 0, 0);
+    return t;
+  }
+
+  function layPaper() {
+    pc.setTransform(1, 0, 0, 1, 0, 0);
+    pc.fillStyle = SHEET;
+    pc.fillRect(0, 0, paper.width, paper.height);
+    pc.fillStyle = pc.createPattern(weaveTile(), "repeat");
+    pc.fillRect(0, 0, paper.width, paper.height);
+    // uneven priming: a few large, barely visible light and dark patches
+    for (var i = 0; i < 7; i++) {
+      var x = Math.random() * paper.width, y = Math.random() * paper.height;
+      var r = (0.3 + Math.random() * 0.5) * Math.max(paper.width, paper.height);
+      var g = pc.createRadialGradient(x, y, 0, x, y, r);
+      var tone = i % 2 ? "255,255,255" : "70,66,58";
+      g.addColorStop(0, "rgba(" + tone + ",0.05)");
+      g.addColorStop(1, "rgba(" + tone + ",0)");
+      pc.fillStyle = g;
+      pc.fillRect(0, 0, paper.width, paper.height);
+    }
+  }
+
+  function resize() {
+    var w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+    var nd = Math.min(window.devicePixelRatio || 1, 2);
+    if (w === W && h === H && nd === dpr) return;
+
+    // keep what is already on the sheet
+    var old = null;
+    if (W) {
+      if (wet) soakIn();
+      old = document.createElement("canvas");
+      old.width = GW; old.height = GH;
+      old.getContext("2d").drawImage(stain, 0, 0);
+    }
+
+    W = w; H = h; dpr = nd;
+    paper.width = ink.width = Math.round(W * dpr);
+    paper.height = ink.height = Math.round(H * dpr);
+    layPaper();
+
+    var c = Math.max(CELL, Math.sqrt(W * H / MAX_CELLS));
+    GW = Math.max(2, Math.ceil(W / c));
+    GH = Math.max(2, Math.ceil(H / c));
+    N = GW * GH;
+    cellPx = W / GW;
+    stain.width = paint.width = maskCanvas.width = GW;
+    stain.height = paint.height = maskCanvas.height = GH;
+    sx.fillStyle = "#fff";
+    sx.fillRect(0, 0, GW, GH);
+    if (old) { sx.imageSmoothingEnabled = true; sx.drawImage(old, 0, 0, GW, GH); }
+    for (var i = 0; i < 3; i++) { A[i] = new Float32Array(N); B[i] = new Float32Array(N); }
+    img = wc.createImageData(GW, GH);
+    for (var j = 3; j < img.data.length; j += 4) img.data[j] = 255;
+    washes = [];
+    wet = false;
+    start();
+  }
+
+  /* ---- line drawing ---- */
+  function trace(c, pts) {
+    c.beginPath();
+    var p0 = pts[0];
+    if (pts.length === 1) {
+      c.moveTo(p0.x, p0.y);
+      c.lineTo(p0.x + 0.01, p0.y + 0.01);
+      return;
+    }
+    var px = p0.x, py = p0.y;
+    c.moveTo(px, py);
+    for (var i = 1; i < pts.length; i++) {
+      var x = pts[i].x, y = pts[i].y;
+      c.quadraticCurveTo(px, py, (px + x) / 2, (py + y) / 2);
+      px = x; py = y;
+    }
+    c.lineTo(px, py);
+  }
+
+  function drawInk(s, alpha) {
+    if (alpha <= 0 || !s.pts.length) return;
+    ic.globalAlpha = alpha;
+    ic.strokeStyle = INK;
+    ic.lineWidth = s.w;
+    ic.lineCap = ic.lineJoin = "round";
+    trace(ic, s.pts);
+    ic.stroke();
+  }
+
+  /* ---- the grid ---- */
+  // one small trade with the four neighbours; edges keep their pigment
+  function diffuse(src, dst, w, h, k) {
+    for (var y = 0; y < h; y++) {
+      var row = y * w;
+      var up = y > 0 ? row - w : row;
+      var dn = y < h - 1 ? row + w : row;
+      var c = src[row];
+      dst[row] = c + k * (src[row + 1] + src[up] + src[dn] - 3 * c);
+      for (var x = 1; x < w - 1; x++) {
+        c = src[row + x];
+        dst[row + x] = c + k * (src[row + x - 1] + src[row + x + 1] + src[up + x] + src[dn + x] - 4 * c);
+      }
+      var e = w - 1;
+      c = src[row + e];
+      dst[row + e] = c + k * (src[row + e - 1] + src[up + e] + src[dn + e] - 3 * c);
+    }
+  }
+
+  function render() {
+    var d = img.data, r = A[0], g = A[1], b = A[2];
+    for (var i = 0, j = 0; i < N; i++, j += 4) {
+      d[j] = 255 * Math.exp(-r[i]);
+      d[j + 1] = 255 * Math.exp(-g[i]);
+      d[j + 2] = 255 * Math.exp(-b[i]);
+    }
+    wc.putImageData(img, 0, 0);
+  }
+
+  // the wash has stopped moving: make it part of the sheet for good
+  function soakIn() {
+    render();
+    sx.globalCompositeOperation = "multiply";
+    sx.imageSmoothingEnabled = false;
+    sx.drawImage(paint, 0, 0);
+    sx.globalCompositeOperation = "source-over";
+    A[0].fill(0); A[1].fill(0); A[2].fill(0);
+    wc.clearRect(0, 0, GW, GH);
+    wet = false;
+  }
+
+  /* Stamp a group of same-coloured strokes as one even coat (crossings are not doubled). */
+  function makeMask(group) {
+    var minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, i, j;
+    mx.setTransform(1, 0, 0, 1, 0, 0);
+    mx.clearRect(0, 0, GW, GH);
+    mx.setTransform(GW / W, 0, 0, GH / H, 0, 0);
+    mx.strokeStyle = "#000";
+    mx.lineCap = mx.lineJoin = "round";
+    for (i = 0; i < group.length; i++) {
+      var pts = group[i].pts;
+      for (j = 0; j < pts.length; j++) {
+        if (pts[j].x < minx) minx = pts[j].x;
+        if (pts[j].x > maxx) maxx = pts[j].x;
+        if (pts[j].y < miny) miny = pts[j].y;
+        if (pts[j].y > maxy) maxy = pts[j].y;
+      }
+      mx.lineWidth = Math.max(LINE, group[i].w * 3.3);
+      trace(mx, pts);
+      mx.stroke();
+    }
+    var pad = LINE + 4 * cellPx, cy = H / GH;
+    var x0 = Math.max(0, Math.floor((minx - pad) / cellPx));
+    var y0 = Math.max(0, Math.floor((miny - pad) / cy));
+    var x1 = Math.min(GW, Math.ceil((maxx + pad) / cellPx));
+    var y1 = Math.min(GH, Math.ceil((maxy + pad) / cy));
+    var w = Math.max(2, x1 - x0), h = Math.max(2, y1 - y0);
+    if (x0 + w > GW) x0 = GW - w;
+    if (y0 + h > GH) y0 = GH - h;
+    var data = mx.getImageData(x0, y0, w, h).data;
+    var m = new Float32Array(w * h), t = new Float32Array(w * h), swap;
+    for (i = 0; i < m.length; i++) m[i] = data[i * 4 + 3] / 255;
+    for (i = 0; i < 3; i++) { diffuse(m, t, w, h, 0.2); swap = m; m = t; t = swap; }   // soften the edge
+    return { x0: x0, y0: y0, w: w, h: h, m: m };
+  }
+
+  function addMask(wash, amount) {
+    var k = wash.k, mk = wash.mask, m = mk.m;
+    var r = A[0], g = A[1], b = A[2];
+    for (var y = 0; y < mk.h; y++) {
+      var src = y * mk.w, dst = (mk.y0 + y) * GW + mk.x0;
+      for (var x = 0; x < mk.w; x++) {
+        var v = m[src + x];
+        if (v > 0) {
+          v *= amount;
+          r[dst + x] += v * k[0];
+          g[dst + x] += v * k[1];
+          b[dst + x] += v * k[2];
         }
+      }
+    }
+  }
 
-        // The API will call this function when the video player is ready.
-        function onPlayerReady(event) {
-            console.log("Player Ready");
-            // You could optionally play the video automatically here:
-            // event.target.playVideo();
+  function turn(grp, now) {
+    var byColor = {};
+    grp.strokes.forEach(function (s) { if (s.pts.length) (byColor[s.pig] = byColor[s.pig] || []).push(s); });
+    Object.keys(byColor).forEach(function (key) {
+      var g = byColor[key];
+      washes.push({ mask: makeMask(g), k: ABSORB[key], added: 0, ink: g, start: now });
+    });
+    grp.strokes = [];
+    wet = true; wetStart = now; applied = 0;   // fresh water: the spread starts over, slowly
+  }
 
-            // Initial sync of GIF animation speed based on default BPM
-             setupGifSync();
+  function frame(now) {
+    ic.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ic.clearRect(0, 0, W, H);
+
+    if (net.ready && drawing && now - lastSend >= 150) { lastSend = now; send(drawing, false); }
+
+    var pending = false;
+    for (var key in groups) {
+      var grp = groups[key];
+      if (grp.live) expire(grp, now);
+      if (!grp.active && grp.strokes.length && now - grp.lastUp >= WAIT) turn(grp, now);
+      for (var i = 0; i < grp.strokes.length; i++) drawInk(grp.strokes[i], 1);
+      if (grp.strokes.length || grp.active) pending = true;
+    }
+
+    var dirty = false;
+    var keep = [];
+    for (var j = 0; j < washes.length; j++) {
+      var w = washes[j];
+      var t = reduce ? RISE + INK_OUT : now - w.start;
+      var inkA = 1 - smooth(0, INK_OUT, t);
+      if (inkA > 0) for (var q = 0; q < w.ink.length; q++) drawInk(w.ink[q], inkA);
+      var target = smooth(0, RISE, t);
+      if (target > w.added) {
+        addMask(w, (target - w.added) * STRENGTH);
+        w.added = target;
+        dirty = true;
+      }
+      if (t < Math.max(RISE, INK_OUT)) keep.push(w);
+    }
+    washes = keep;
+    ic.globalAlpha = 1;
+
+    if (wet) {
+      // how soft the wash should be by now, and how much spreading that still needs
+      var e = smooth(0, SPREAD, now - wetStart);
+      var sig = S0 * Math.pow(S1 / S0, e);
+      var want = (sig * sig - S0 * S0) / (cellPx * cellPx);
+      var owe = want - applied;
+      if (owe >= 0.04 || (e >= 1 && owe > 0)) {
+        var kt = Math.min(owe / 2, 0.72);
+        var steps = Math.ceil(kt / 0.24), k = kt / steps, swap;
+        for (var s = 0; s < steps; s++) {
+          for (var c = 0; c < 3; c++) {
+            diffuse(A[c], B[c], GW, GH, k);
+            swap = A[c]; A[c] = B[c]; B[c] = swap;
+          }
         }
+        applied += 2 * kt;
+        dirty = true;
+      }
+      if (e >= 1 && want - applied < 0.001 && !washes.length) soakIn();
+      else if (dirty) render();
+    }
 
-        // --- GIF Sync Logic ---
-        const bpmInputElement = document.getElementById('bpm-input');
-        const gifElement = document.getElementById('dance-gif');
+    if (pending || washes.length || wet) requestAnimationFrame(frame);
+    else running = false;
+  }
 
-        function setupGifSync() {
-            // Initial sync based on the input field's default value
-             updateGifAnimationSpeed();
+  function start() {
+    if (!running) { running = true; requestAnimationFrame(frame); }
+  }
 
-            // Add listener to update speed when BPM input changes
-            bpmInputElement.addEventListener('input', updateGifAnimationSpeed);
+  /* ---- input ---- */
+  function pos(e) {
+    var r = ink.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function add(e) {
+    var p = pos(e), pts = drawing.pts, last = pts[pts.length - 1];
+    var dx = p.x - last.x, dy = p.y - last.y;
+    if (dx * dx + dy * dy > 1.5) pts.push(p);
+  }
+
+  ink.addEventListener("pointerdown", function (e) {
+    if (e.button) return;
+    e.preventDefault();
+    try { ink.setPointerCapture(e.pointerId); } catch (err) {}
+    if (drawing) finish();
+    drawing = { pts: [pos(e)], pig: pigment, w: e.pointerType === "pen" ? 2.4 : 3, id: e.pointerId, sid: ++seq, sent: 0 };
+    me.strokes.push(drawing);
+    me.active = 1;
+    if (!touched) { touched = true; hint.classList.add("quiet"); }
+    start();
+  });
+  ink.addEventListener("pointermove", function (e) {
+    if (!drawing || e.pointerId !== drawing.id) return;
+    e.preventDefault();
+    var list = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+    if (list && list.length) { for (var i = 0; i < list.length; i++) add(list[i]); }
+    else add(e);
+  });
+  function lift(e) {
+    if (!drawing || e.pointerId !== drawing.id) return;
+    finish();
+  }
+  function finish() {
+    send(drawing, true);
+    drawing = null;
+    me.active = 0;
+    me.lastUp = performance.now();
+  }
+  ink.addEventListener("pointerup", lift);
+  ink.addEventListener("pointercancel", lift);
+  ink.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  var pigs = Array.prototype.slice.call(document.querySelectorAll(".pig"));
+  pigs.forEach(function (b, i) {
+    b.addEventListener("click", function () {
+      pigment = i;
+      pigs.forEach(function (o, k) { o.setAttribute("aria-pressed", k === i ? "true" : "false"); });
+    });
+  });
+  function freshSheet() {
+    for (var key in groups) {
+      groups[key].strokes = []; groups[key].active = 0;
+      if (groups[key].live) groups[key].live = {};
+    }
+    washes = []; drawing = null; wet = false;
+    A[0].fill(0); A[1].fill(0); A[2].fill(0);
+    wc.clearRect(0, 0, GW, GH);
+    sx.globalCompositeOperation = "source-over";
+    sx.fillStyle = "#fff";
+    sx.fillRect(0, 0, GW, GH);
+    ic.setTransform(1, 0, 0, 1, 0, 0);
+    ic.clearRect(0, 0, ink.width, ink.height);
+  }
+  document.getElementById("fresh").addEventListener("click", function () {
+    freshSheet();
+    net.emit("fresh", {});
+  });
+
+  /* ---- other people ----
+     Everyone in the room hears each stroke as it is drawn and replays it locally,
+     so each screen runs its own copy of the wash. Positions travel as fractions of
+     the sheet (0-9999), so they land in the same relative place on a different-sized
+     screen. Nothing is stored on a server. */
+  function noop() {}
+
+  function send(s, end) {
+    if (!net.ready) return;
+    var from = s.sent, n = s.pts.length;
+    if (from >= n && !end) return;
+    do {
+      var to = Math.min(n, from + 300), arr = [];
+      for (var i = from; i < to; i++) {
+        arr.push(Math.round(s.pts[i].x / W * 9999), Math.round(s.pts[i].y / H * 9999));
+      }
+      net.emit("ink", { id: s.sid, p: s.pig, f: from, pts: arr, end: !!(end && to >= n) });
+      from = to;
+    } while (from < n);
+    s.sent = n;
+  }
+
+  function unit(v) { v = +v / 9999; return v >= 0 && v <= 1 ? v : v > 1 ? 1 : 0; }
+
+  function hear(msg) {
+    if (msg.sameTab) return;
+    var d = msg.data;
+    if (!d || typeof d !== "object" || !Array.isArray(d.pts)) return;
+    var key = "r:" + msg.peer;
+    var grp = groups[key] || (groups[key] = { strokes: [], active: 0, lastUp: 0, live: {} });
+    var id = String(d.id).slice(0, 24);
+    var now = performance.now();
+    var s = grp.live[id];
+    if (!s) {
+      if (!d.pts.length || grp.strokes.length > 400) return;
+      var p = d.p | 0;
+      s = { pts: [], pig: p >= 0 && p < PIGMENTS.length ? p : 0, w: 3, at: now };
+      grp.live[id] = s;
+      grp.strokes.push(s);
+      grp.active++;
+    }
+    s.at = now;
+    var f = d.f | 0;
+    if (f >= 0 && f < s.pts.length) s.pts.length = f;   // a resend replaces what it overlaps
+    for (var i = 0; i + 1 < d.pts.length && i < 800 && s.pts.length < 6000; i += 2) {
+      s.pts.push({ x: unit(d.pts[i]) * W, y: unit(d.pts[i + 1]) * H });
+    }
+    if (d.end) { delete grp.live[id]; grp.active--; grp.lastUp = now; }
+    start();
+  }
+
+  // a stroke whose ending never arrived is treated as lifted after a short silence
+  function expire(grp, now) {
+    for (var id in grp.live) {
+      if (now - grp.live[id].at > 2500) { delete grp.live[id]; grp.active--; grp.lastUp = now; }
+    }
+    if (grp.active < 0) grp.active = 0;
+  }
+
+  /* ---- connection: browser to browser, using PeerJS ----
+     The part of the address after # is the room code. Whoever opens a room first
+     claims it and becomes the hub; everyone after connects to them, and the hub
+     passes strokes along. If the hub leaves, the next person takes over the room.
+     PeerJS's free public server is used only to introduce the browsers to each other. */
+  var PEERJS = "https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js";
+  var PREFIX = "ink-watercolor-";
+  var PEER_OPTS = {};   // to add your own relay: { config: { iceServers: [ ... ] } }
+
+  var code = (location.hash || "").replace(/[^a-z0-9]/gi, "").slice(0, 24).toLowerCase();
+  var arrivedByLink = !!code;
+  if (!code) {
+    code = Math.random().toString(36).slice(2, 8);
+    try { history.replaceState(null, "", "#" + code); } catch (err) { location.hash = code; }
+  }
+  window.addEventListener("hashchange", function () { location.reload(); });
+
+  var who = document.getElementById("who"), whoText = document.getElementById("who-text");
+  var peer = null, isHost = false, hostConn = null, guests = [];
+  var others = 0, tries = 0, state = "connecting", gotSnapshot = false, retryTimer = 0;
+
+  var net = {
+    ready: false,
+    emit: function (topic, data) {
+      var i;
+      if (isHost) {
+        for (i = 0; i < guests.length; i++) post(guests[i], { t: topic, d: data, from: "host" });
+      } else if (hostConn) {
+        post(hostConn, { t: topic, d: data });
+      }
+    }
+  };
+  function post(conn, m) { try { if (conn.open) conn.send(m); } catch (err) {} }
+
+  function show() {
+    var together = state === "ok" && others > 0;
+    who.classList.toggle("on", together);
+    whoText.textContent =
+      state === "off" ? "Offline, drawing alone"
+      : state === "failed" ? "Can't connect, retrying"
+      : state === "connecting" ? "Connecting"
+      : others === 0 ? "Only you here"
+      : others === 1 ? "Together now"
+      : (others + 1) + " people here";
+  }
+
+  function handle(m, from) {
+    if (!m || typeof m !== "object" || typeof m.t !== "string") return;
+    if (m.t === "ink") hear({ peer: from, sameTab: false, data: m.d });
+    else if (m.t === "fresh") freshSheet();
+  }
+
+  function drop() {
+    net.ready = false; others = 0; hostConn = null; guests = [];
+    var p = peer; peer = null;
+    if (p) { try { p.destroy(); } catch (err) {} }
+  }
+
+  function again(soon) {
+    drop();
+    tries++;
+    state = tries > 3 ? "failed" : "connecting";
+    show();
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(join, (soon ? 300 : Math.min(8000, 500 * Math.pow(2, tries))) + Math.random() * 900);
+  }
+
+  // try to claim the room; if it is taken, connect to whoever holds it
+  function join() {
+    drop();
+    if (!window.Peer) { state = "off"; show(); return; }
+    var p = new window.Peer(PREFIX + code, PEER_OPTS);
+    peer = p; isHost = true;
+    p.on("open", function () {
+      if (peer !== p) return;
+      net.ready = true; tries = 0; state = "ok"; show();
+    });
+    p.on("connection", function (c) { if (peer === p) adopt(p, c); });
+    p.on("disconnected", function () {
+      if (peer !== p || p.destroyed) return;
+      try { p.reconnect(); } catch (err) { again(false); }
+    });
+    p.on("error", function (err) {
+      if (peer !== p) return;
+      if (err && err.type === "unavailable-id") { drop(); asGuest(); }
+      else if (!net.ready) again(false);
+    });
+  }
+
+  function adopt(p, c) {
+    function gone() {
+      var i = guests.indexOf(c);
+      if (i < 0) return;
+      guests.splice(i, 1);
+      headcount();
+    }
+    c.on("open", function () {
+      if (peer !== p) return;
+      guests.push(c);
+      headcount();
+      post(c, { t: "snap", d: snapshot() });
+    });
+    c.on("data", function (m) {
+      if (peer !== p || !m || typeof m !== "object") return;
+      handle(m, c.peer);
+      if (m.t === "ink" || m.t === "fresh") {
+        for (var i = 0; i < guests.length; i++) {
+          if (guests[i] !== c) post(guests[i], { t: m.t, d: m.d, from: c.peer });
         }
+      }
+    });
+    c.on("close", gone);
+    c.on("error", gone);
+  }
 
-        function updateGifAnimationSpeed() {
-            const bpm = parseInt(bpmInputElement.value, 10);
-            if (bpm && bpm > 0) {
-                // Calculate duration of one beat in seconds
-                const beatDuration = 60 / bpm;
-                // Apply it to the CSS animation duration
-                gifElement.style.animationDuration = `${beatDuration}s`;
-                console.log(`Set GIF animation duration to ${beatDuration.toFixed(3)}s for ${bpm} BPM`);
+  function headcount() {
+    others = guests.length;
+    for (var i = 0; i < guests.length; i++) post(guests[i], { t: "n", d: guests.length + 1 });
+    show();
+  }
 
-                 // If video is currently playing, ensure animation is running
-                if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
-                     gifElement.style.animationPlayState = 'running';
-                }
+  function asGuest() {
+    var p = new window.Peer(PEER_OPTS);
+    peer = p; isHost = false;
+    p.on("open", function () {
+      if (peer !== p) return;
+      var c = p.connect(PREFIX + code, { reliable: true });
+      hostConn = c;
+      var timer = setTimeout(function () { if (peer === p && !c.open) again(false); }, 15000);
+      c.on("open", function () {
+        if (peer !== p) return;
+        clearTimeout(timer);
+        net.ready = true; tries = 0; state = "ok"; show();
+      });
+      c.on("data", function (m) {
+        if (peer !== p || !m || typeof m !== "object") return;
+        if (m.t === "n") { others = Math.max(0, (m.d | 0) - 1); show(); }
+        else if (m.t === "snap") applySnapshot(m.d);
+        else handle(m, typeof m.from === "string" ? m.from.slice(0, 64) : "host");
+      });
+      c.on("close", function () { clearTimeout(timer); if (peer === p) again(true); });   // hub left: take over or rejoin
+      c.on("error", function () { clearTimeout(timer); if (peer === p) again(false); });
+    });
+    p.on("error", function () { if (peer === p) again(false); });
+  }
 
-            } else {
-                console.log("Invalid BPM value, pausing animation.");
-                gifElement.style.animationPlayState = 'paused'; // Pause if BPM is invalid
-            }
-        }
+  /* Someone arriving later is sent the sheet as it looks now (a tiny image), so they
+     start with the same stains instead of a blank canvas. */
+  function snapshot() {
+    try {
+      var c = document.createElement("canvas");
+      c.width = GW; c.height = GH;
+      var x = c.getContext("2d");
+      x.fillStyle = "#fff";
+      x.fillRect(0, 0, GW, GH);
+      x.drawImage(stain, 0, 0);
+      if (wet) { render(); x.globalCompositeOperation = "multiply"; x.drawImage(paint, 0, 0); }
+      return c.toDataURL("image/png");
+    } catch (err) { return ""; }
+  }
+  function applySnapshot(url) {
+    if (gotSnapshot || touched) return;
+    if (typeof url !== "string" || url.length > 600000 || url.indexOf("data:image/png;base64,") !== 0) return;
+    gotSnapshot = true;
+    var im = new Image();
+    im.onload = function () {
+      sx.globalCompositeOperation = "multiply";
+      sx.imageSmoothingEnabled = true;
+      sx.drawImage(im, 0, 0, GW, GH);
+      sx.globalCompositeOperation = "source-over";
+    };
+    im.src = url;
+  }
 
-        // The API calls this function when the player's state changes.
-        function onPlayerStateChange(event) {
-            console.log("Player State Change:", event.data);
-            if (event.data == YT.PlayerState.PLAYING) {
-                console.log("Video Playing - Starting GIF Animation");
-                updateGifAnimationSpeed(); // Ensure speed is correct for current BPM
-                gifElement.style.animationPlayState = 'running'; // Start the CSS pulse animation
-            } else {
-                 console.log("Video Paused/Ended/Other - Pausing GIF Animation");
-                gifElement.style.animationPlayState = 'paused'; // Pause the CSS pulse animation
-            }
-        }
+  var invite = document.getElementById("invite");
+  invite.addEventListener("click", function () {
+    var url = location.href;
+    function done(ok) {
+      invite.textContent = ok ? "Link copied" : "Copy it from the address bar";
+      setTimeout(function () { invite.textContent = "Copy invite link"; }, 2200);
+    }
+    function oldWay() {
+      try {
+        var t = document.createElement("textarea");
+        t.value = url; t.setAttribute("readonly", "");
+        t.style.position = "fixed"; t.style.opacity = "0";
+        document.body.appendChild(t); t.select();
+        var ok = document.execCommand("copy");
+        document.body.removeChild(t);
+        done(ok);
+      } catch (err) { done(false); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function () { done(true); }, oldWay);
+    else oldWay();
+  });
 
-        // --- Video Loading Logic ---
-        const videoUrlElement = document.getElementById('video-url');
-        const loadButtonElement = document.getElementById('load-button');
+  function connect() {
+    show();
+    var s = document.createElement("script");
+    s.src = PEERJS;
+    s.onload = join;
+    s.onerror = function () { state = "off"; show(); };
+    document.head.appendChild(s);
+  }
 
-        loadButtonElement.addEventListener('click', loadVideoFromInput);
-         // Optional: Allow pressing Enter in the input field to load
-         videoUrlElement.addEventListener('keypress', function(event) {
-             if (event.key === 'Enter') {
-                event.preventDefault(); // Prevent potential form submission
-                loadVideoFromInput();
-            }
-         });
+  /* ---- example marks so the sheet is not empty on arrival ---- */
+  function example() {
+    var cx = W / 2, cy = H * 0.44, s = Math.min(W, H) * 0.15;
+    var heart = [], wave = [], t, x;
+    for (t = 0.12; t <= 6.2832 - 0.06; t += 0.07) {
+      heart.push({
+        x: cx + s * Math.pow(Math.sin(t), 3),
+        y: cy - s * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16
+      });
+    }
+    for (x = -1.25; x <= 1.25; x += 0.04) {
+      wave.push({ x: cx + s * x, y: cy + s * 1.55 + Math.sin(x * 7) * s * 0.07 });
+    }
+    me.strokes.push({ pts: heart, pig: 1, w: 3 });
+    me.strokes.push({ pts: wave, pig: 0, w: 3 });
+    me.lastUp = performance.now() - WAIT + 1100;
+  }
 
-
-        function loadVideoFromInput() {
-            const input = videoUrlElement.value.trim();
-            const videoId = extractVideoID(input);
-
-            if (videoId && player && typeof player.loadVideoById === 'function') {
-                 console.log("Loading video ID:", videoId);
-                player.loadVideoById(videoId);
-                 // Optional: Clear the input field after loading
-                 // videoUrlElement.value = '';
-            } else if (!videoId) {
-                alert("Could not find a valid YouTube Video ID in the input.");
-            } else {
-                 alert("YouTube player is not ready yet. Please wait a moment and try again.");
-            }
-        }
-
-        // Helper function to extract YouTube video ID from various URL formats or just the ID itself
-        function extractVideoID(input) {
-            if (!input) return null;
-
-            // Regular expression to cover common YouTube URL patterns and standalone IDs
-            const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})|^([a-zA-Z0-9_-]{11})$/;
-            const match = input.match(regex);
-
-            // Return the first captured group (URL format) or the second (standalone ID)
-            return match ? (match[1] || match[2]) : null;
-        }
-
-         // Make sure initial setup runs after the DOM is fully loaded,
-         // though API readiness might take longer. PlayerReady handles initial sync.
-         document.addEventListener('DOMContentLoaded', () => {
-             // Set placeholder with the default video ID for clarity
-             if(initialVideoId) {
-                videoUrlElement.placeholder = `e.g., https://www.youtube.com/watch?v=${initialVideoId} or ${initialVideoId}`;
-             }
-             // Call setupGifSync early to attach the input listener.
-             // The actual animation speed update and play state control happens in onPlayerReady/onPlayerStateChange
-             setupGifSync();
-         });
-
-    </script>
-
+  window.addEventListener("resize", resize);
+  resize();
+  if (!arrivedByLink) example();
+  start();
+  connect();
+})();
+</script>
 </body>
 </html>
