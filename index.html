@@ -36,6 +36,17 @@
   #stain, #paint { mix-blend-mode: multiply; pointer-events: none; }
   #ink { touch-action: none; cursor: crosshair; }
 
+  .edge {
+    position: absolute; left: 0; right: 0; height: 0;
+    border-top: 1px dashed rgba(46, 45, 56, 0.28);
+    pointer-events: none;
+  }
+  .edge[hidden] { display: none; }
+  .edge span {
+    position: absolute; right: 10px; bottom: 3px;
+    font-size: 11px; color: var(--graphite-soft);
+  }
+
   #hint {
     position: absolute; top: 18px; left: 20px; right: 20px;
     margin: 0; max-width: 34ch;
@@ -109,6 +120,9 @@
   <canvas id="ink" aria-label="Drawing surface. Write or draw with a finger or mouse."></canvas>
 </div>
 
+<div class="edge" id="edge-top" hidden><span>Their screen ends here</span></div>
+<div class="edge" id="edge-bot" hidden></div>
+
 <p id="hint"><strong>Write or draw anywhere.</strong>It turns to watercolor about three seconds after you stop. Send someone the link to draw together.</p>
 
 <div id="dock">
@@ -145,7 +159,7 @@
   var STRENGTH = 0.8;    // how close the fresh wash is to the full pigment colour
   var LINE = 10;         // px width of the wash when it first appears
   var S0 = 5, S1 = 56;   // px softness (blur radius) when fresh and when soaked in
-  var CELL = 4, MAX_CELLS = 60000;
+  var CELL = 4;
   var INK = "#2e2d38";
   var SHEET = "#e9e8e2";
   var PIGMENTS = ["#3c4c94", "#bb4862", "#5a8c4c", "#c8952f", "#7b509c"];
@@ -171,6 +185,7 @@
 
   var W = 0, H = 0, dpr = 1;
   var GW = 0, GH = 0, N = 0, cellPx = CELL;
+  var U = 1;   // size of things relative to a 390 px wide page, so both screens draw the same picture
   var A = [null, null, null], B = [null, null, null];   // pigment grid and its spare
   var img = null;
   // wet ink not yet turned, kept per writer so each person's pause is timed on its own
@@ -241,13 +256,14 @@
     }
 
     W = w; H = h; dpr = nd;
+    U = W / 390;
     paper.width = ink.width = Math.round(W * dpr);
     paper.height = ink.height = Math.round(H * dpr);
     layPaper();
 
-    var c = Math.max(CELL, Math.sqrt(W * H / MAX_CELLS));
-    GW = Math.max(2, Math.ceil(W / c));
-    GH = Math.max(2, Math.ceil(H / c));
+    // the page is always 100 cells wide, so the wash behaves the same on every screen
+    GW = 100;
+    GH = Math.max(2, Math.ceil(H / (W / GW)));
     N = GW * GH;
     cellPx = W / GW;
     stain.width = paint.width = maskCanvas.width = GW;
@@ -261,6 +277,8 @@
     washes = [];
     wet = false;
     start();
+    if (net && net.ready) announce();
+    updateEdges();
   }
 
   /* ---- line drawing ---- */
@@ -286,7 +304,7 @@
     if (alpha <= 0 || !s.pts.length) return;
     ic.globalAlpha = alpha;
     ic.strokeStyle = INK;
-    ic.lineWidth = Math.max(1, s.w * (s.k || 1));
+    ic.lineWidth = s.w * U;
     ic.lineCap = ic.lineJoin = "round";
     trace(ic, s.pts);
     ic.stroke();
@@ -349,11 +367,11 @@
         if (pts[j].y < miny) miny = pts[j].y;
         if (pts[j].y > maxy) maxy = pts[j].y;
       }
-      mx.lineWidth = Math.max(1.2 * cellPx, Math.max(LINE, group[i].w * 3.3) * (group[i].k || 1));
+      mx.lineWidth = Math.max(LINE, group[i].w * 3.3) * U;
       trace(mx, pts);
       mx.stroke();
     }
-    var pad = LINE * 2 + 4 * cellPx, cy = H / GH;
+    var pad = LINE * U + 4 * cellPx, cy = H / GH;
     var x0 = Math.max(0, Math.floor((minx - pad) / cellPx));
     var y0 = Math.max(0, Math.floor((miny - pad) / cy));
     var x1 = Math.min(GW, Math.ceil((maxx + pad) / cellPx));
@@ -432,8 +450,8 @@
     if (wet) {
       // how soft the wash should be by now, and how much spreading that still needs
       var e = smooth(0, SPREAD, now - wetStart);
-      var sig = S0 * Math.pow(S1 / S0, e);
-      var want = (sig * sig - S0 * S0) / (cellPx * cellPx);
+      var sig = S0 * U * Math.pow(S1 / S0, e);
+      var want = (sig * sig - S0 * U * S0 * U) / (cellPx * cellPx);
       var owe = want - applied;
       if (owe >= 0.04 || (e >= 1 && owe > 0)) {
         var kt = Math.min(owe / 2, 0.72);
@@ -530,9 +548,10 @@
 
   /* ---- other people ----
      Everyone in the room hears each stroke as it is drawn and replays it locally,
-     so each screen runs its own copy of the wash. Positions travel as fractions of
-     the sheet (0-9999), so they land in the same relative place on a different-sized
-     screen. Nothing is stored on a server. */
+     so each screen runs its own copy of the wash. Everyone shares one scale: the page
+     width is the same for all, and heights are measured from the middle. So marks
+     always line up; a taller screen just sees a little more above and below.
+     Nothing is stored on a server. */
   function noop() {}
 
   function send(s, end) {
@@ -542,9 +561,9 @@
     do {
       var to = Math.min(n, from + 300), arr = [];
       for (var i = from; i < to; i++) {
-        arr.push(Math.round(s.pts[i].x / W * 9999), Math.round(s.pts[i].y / H * 9999));
+        arr.push(Math.round(s.pts[i].x / W * 9999), Math.round((s.pts[i].y - H / 2) / W * 9999));
       }
-      net.emit("ink", { id: s.sid, p: s.pig, f: from, pts: arr, end: !!(end && to >= n), a: [W, H] });
+      net.emit("ink", { id: s.sid, p: s.pig, f: from, pts: arr, end: !!(end && to >= n) });
       from = to;
     } while (from < n);
     s.sent = n;
@@ -552,14 +571,7 @@
 
   function unit(v) { v = +v / 9999; return v >= 0 && v <= 1 ? v : v > 1 ? 1 : 0; }
 
-  /* The other screen may be a different shape. Its whole page is fitted inside mine,
-     centred and scaled evenly, so nothing is stretched and nothing falls off the edge. */
-  function fit(a) {
-    var sw = a && +a[0], sh = a && +a[1];
-    if (!(sw >= 50 && sw <= 10000 && sh >= 50 && sh <= 10000)) { sw = W; sh = H; }
-    var k = Math.min(W / sw, H / sh);
-    return { k: k, x: (W - sw * k) / 2, y: (H - sh * k) / 2, w: sw * k, h: sh * k };
-  }
+  function fromMiddle(v) { v = +v / 9999; return v >= -4 && v <= 4 ? v : 0; }
 
   function hear(msg) {
     if (msg.sameTab) return;
@@ -573,8 +585,7 @@
     if (!s) {
       if (!d.pts.length || grp.strokes.length > 400) return;
       var p = d.p | 0;
-      s = { pts: [], pig: p >= 0 && p < PIGMENTS.length ? p : 0, w: 3, at: now, box: fit(d.a) };
-      s.k = Math.min(2, s.box.k);
+      s = { pts: [], pig: p >= 0 && p < PIGMENTS.length ? p : 0, w: 3, at: now };
       grp.live[id] = s;
       grp.strokes.push(s);
       grp.active++;
@@ -583,7 +594,7 @@
     var f = d.f | 0;
     if (f >= 0 && f < s.pts.length) s.pts.length = f;   // a resend replaces what it overlaps
     for (var i = 0; i + 1 < d.pts.length && i < 800 && s.pts.length < 6000; i += 2) {
-      s.pts.push({ x: s.box.x + unit(d.pts[i]) * s.box.w, y: s.box.y + unit(d.pts[i + 1]) * s.box.h });
+      s.pts.push({ x: unit(d.pts[i]) * W, y: H / 2 + fromMiddle(d.pts[i + 1]) * W });
     }
     if (d.end) { delete grp.live[id]; grp.active--; grp.lastUp = now; }
     start();
@@ -617,6 +628,21 @@
   var who = document.getElementById("who"), whoText = document.getElementById("who-text");
   var peer = null, isHost = false, hostConn = null, guests = [];
   var others = 0, tries = 0, state = "connecting", gotSnapshot = false, retryTimer = 0;
+  var dims = {};   // each other person's page shape (height / width)
+
+  function announce() { net.emit("dim", H / W); }
+
+  /* If someone's screen is shorter than mine, mark where theirs ends: anything I draw
+     beyond those lines is off their page. */
+  function updateEdges() {
+    var top = document.getElementById("edge-top"), bot = document.getElementById("edge-bot");
+    var least = Infinity;
+    for (var id in dims) if (dims[id] < least) least = dims[id];
+    var cut = (H - least * W) / 2;
+    var showIt = isFinite(least) && cut > 6;
+    top.hidden = bot.hidden = !showIt;
+    if (showIt) { top.style.top = cut + "px"; bot.style.top = (H - cut) + "px"; }
+  }
 
   var net = {
     ready: false,
@@ -645,12 +671,14 @@
 
   function handle(m, from) {
     if (!m || typeof m !== "object" || typeof m.t !== "string") return;
-    if (m.t === "ink") hear({ peer: from, sameTab: false, data: m.d });
+    if (m.t === "dim") { var r = +m.d; if (r > 0.2 && r < 5) { dims[from] = r; updateEdges(); } }
+    else if (m.t === "ink") hear({ peer: from, sameTab: false, data: m.d });
     else if (m.t === "fresh") freshSheet();
   }
 
   function drop() {
     net.ready = false; others = 0; hostConn = null; guests = [];
+    dims = {}; updateEdges();
     var p = peer; peer = null;
     if (p) { try { p.destroy(); } catch (err) {} }
   }
@@ -691,6 +719,8 @@
       var i = guests.indexOf(c);
       if (i < 0) return;
       guests.splice(i, 1);
+      delete dims[c.peer]; updateEdges();
+      for (var g = 0; g < guests.length; g++) post(guests[g], { t: "gone", d: c.peer });
       headcount();
     }
     c.on("open", function () {
@@ -698,12 +728,14 @@
       guests.push(c);
       headcount();
       var snap = snapshot();
-      if (snap.length < 200000) post(c, { t: "snap", d: snap, a: [W, H] });
+      if (snap.length < 200000) post(c, { t: "snap", d: snap });
+      post(c, { t: "dim", d: H / W, from: "host" });
+      for (var id in dims) if (id !== c.peer) post(c, { t: "dim", d: dims[id], from: id });
     });
     c.on("data", function (m) {
       if (peer !== p || !m || typeof m !== "object") return;
       handle(m, c.peer);
-      if (m.t === "ink" || m.t === "fresh") {
+      if (m.t === "ink" || m.t === "fresh" || m.t === "dim") {
         for (var i = 0; i < guests.length; i++) {
           if (guests[i] !== c) post(guests[i], { t: m.t, d: m.d, from: c.peer });
         }
@@ -731,11 +763,13 @@
         if (peer !== p) return;
         clearTimeout(timer);
         net.ready = true; tries = 0; state = "ok"; show();
+        announce();
       });
       c.on("data", function (m) {
         if (peer !== p || !m || typeof m !== "object") return;
         if (m.t === "n") { others = Math.max(0, (m.d | 0) - 1); show(); }
-        else if (m.t === "snap") applySnapshot(m.d, m.a);
+        else if (m.t === "snap") applySnapshot(m.d);
+        else if (m.t === "gone") { delete dims[String(m.d)]; updateEdges(); }
         else handle(m, typeof m.from === "string" ? m.from.slice(0, 64) : "host");
       });
       c.on("close", function () { clearTimeout(timer); if (peer === p) again(true); });   // hub left: take over or rejoin
@@ -758,7 +792,7 @@
       return c.toDataURL("image/png");
     } catch (err) { return ""; }
   }
-  function applySnapshot(url, a) {
+  function applySnapshot(url) {
     if (gotSnapshot || touched) return;
     if (typeof url !== "string" || url.length > 600000 || url.indexOf("data:image/png;base64,") !== 0) return;
     gotSnapshot = true;
@@ -766,8 +800,8 @@
     im.onload = function () {
       sx.globalCompositeOperation = "multiply";
       sx.imageSmoothingEnabled = true;
-      var b = fit(a), gx = GW / W, gy = GH / H;
-      sx.drawImage(im, b.x * gx, b.y * gy, b.w * gx, b.h * gy);
+      var hh = im.height * GW / im.width;
+      sx.drawImage(im, 0, (GH - hh) / 2, GW, hh);
       sx.globalCompositeOperation = "source-over";
     };
     im.src = url;
