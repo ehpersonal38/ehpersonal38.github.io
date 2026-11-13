@@ -17,6 +17,7 @@
     --tray: rgba(250, 250, 247, 0.86);
     --tray-edge: rgba(46, 45, 56, 0.16);
     --focus: #2f55c9;
+    --warn: #c0473f;         /* clear, armed */
     --here: #3f8f5b;         /* someone else is on the sheet */
     --font: "Karla", "Helvetica Neue", Arial, sans-serif;
   }
@@ -33,7 +34,8 @@
   }
   #stage { position: absolute; inset: 0; isolation: isolate; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  #stain, #paint { mix-blend-mode: multiply; pointer-events: none; }
+  #stain, #wpaint, #wink { pointer-events: none; }
+  #paint { mix-blend-mode: multiply; pointer-events: none; }
   #ink { touch-action: none; cursor: crosshair; mix-blend-mode: multiply; }
   #glit { pointer-events: none; }
 
@@ -52,7 +54,7 @@
   #dock > * { pointer-events: auto; }
   #who {
     margin: 0; display: flex; align-items: center; gap: 7px;
-    padding: 4px 5px 4px 12px; white-space: nowrap; max-width: calc(100% - 32px);
+    padding: 4px 5px 4px 12px; white-space: nowrap; max-width: 100%;
     font-size: 13px; color: var(--graphite-soft);
     background: var(--tray); border: 1px solid var(--tray-edge); border-radius: 999px;
   }
@@ -63,25 +65,60 @@
     cursor: pointer;
   }
   #invite:active { background: rgba(46,45,56,0.08); }
-  #who .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--graphite-soft); }
+  #who .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--graphite-soft); }
   #who.on { color: var(--graphite); }
   #who.on .dot { background: var(--here); border-color: var(--here); }
 
+  /* One row: eight paints, width, clear. Sized to fit a 360 px wide phone. */
+  #size, #fresh {
+    flex: none; width: 30px; height: 40px; padding: 0; border: 0; background: none;
+    display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+    color: var(--graphite);
+  }
+  #size { margin-left: 0; }
+  .sep { flex: none; width: 1px; height: 22px; margin: 0 3px; background: rgba(46, 45, 56, 0.08); }
+  #size svg, #fresh svg {
+    width: 26px; height: 26px; display: block; border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--tray-edge);
+  }
+  #size[aria-expanded="true"] svg { background: var(--graphite); color: #fff; box-shadow: none; }
+  #fresh { margin-left: 1px; }
+  #fresh svg, #size svg { padding: 3px; box-sizing: border-box; }
+  #size svg { padding: 0; }
+  #fresh.armed svg { background: var(--warn); color: #fff; box-shadow: none; }
+
+  /* the width drawer opens above the tray */
+  #sizes {
+    position: absolute; right: 0; bottom: calc(100% + 8px);
+    display: flex; align-items: center; gap: 2px; padding: 4px 6px;
+    background: var(--tray); border: 1px solid var(--tray-edge); border-radius: 999px;
+    box-shadow: 0 6px 18px rgba(46, 45, 56, 0.14);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  #sizes[hidden] { display: none; }
+  #sizes button {
+    width: 44px; height: 40px; padding: 0; border: 0; background: none; border-radius: 999px;
+    display: grid; place-items: center; cursor: pointer; color: var(--graphite);
+  }
+  #sizes button svg { width: 34px; height: 24px; display: block; }
+  #sizes button[aria-pressed="true"] { background: rgba(46, 45, 56, 0.1); }
+
   #tray {
-    display: flex; align-items: center; gap: 4px;
-    max-width: calc(100% - 32px);
-    padding: 5px 8px 5px 6px;
+    position: relative;
+    display: flex; align-items: center; gap: 1px;
+    max-width: 100%;
+    padding: 4px 4px;
     background: var(--tray);
     border: 1px solid var(--tray-edge);
     border-radius: 999px;
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   }
   .pig {
-    width: 32px; height: 40px; padding: 0; border: 0; background: none;
+    flex: none; width: 30px; height: 40px; padding: 0; border: 0; background: none;
     display: grid; place-items: center; border-radius: 50%; cursor: pointer;
   }
   .pig span {
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 21px; height: 21px; border-radius: 50%;
     background: var(--c);
     box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
     transition: transform 0.15s ease;
@@ -97,13 +134,18 @@
     transform: scale(1.18);
     box-shadow: 0 0 0 2px var(--tray), 0 0 0 4px var(--graphite);
   }
-  #fresh {
-    margin-left: 4px; height: 36px; padding: 0 12px;
-    font: 600 14px var(--font); color: var(--graphite);
-    background: transparent; border: 1px solid var(--tray-edge); border-radius: 999px;
-    cursor: pointer; white-space: nowrap;
+  /* temporary test panel, shown only when the address has ?test */
+  #testpanel {
+    position: absolute; top: 12px; left: 12px; z-index: 5;
+    display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+    font-size: 13px; color: var(--graphite);
+    background: var(--tray); border: 1px solid var(--tray-edge); border-radius: 12px;
   }
-  #fresh:active { background: rgba(46,45,56,0.08); }
+  #testpanel[hidden] { display: none; }
+  #testpanel label { color: var(--graphite-soft); }
+  #testpanel select { font: inherit; padding: 4px; }
+  #testpanel .t-row { display: flex; align-items: center; gap: 6px; color: var(--graphite); }
+  #t-stat { color: var(--graphite-soft); font-variant-numeric: tabular-nums; }
   button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) {
     .pig span { transition: none; }
@@ -115,24 +157,42 @@
   <canvas id="paper" aria-hidden="true"></canvas>
   <canvas id="stain" aria-hidden="true"></canvas>
   <canvas id="paint" aria-hidden="true"></canvas>
+  <canvas id="wpaint" aria-hidden="true"></canvas>
   <canvas id="ink" aria-label="Drawing surface. Write or draw with a finger or mouse."></canvas>
+  <canvas id="wink" aria-hidden="true"></canvas>
   <canvas id="glit" aria-hidden="true"></canvas>
 </div>
 
 <div class="edge" id="edge-top" hidden><span>Their screen ends here</span></div>
 <div class="edge" id="edge-bot" hidden></div>
 
+<div id="testpanel" hidden>
+  <strong>Test</strong>
+  <label for="t-net">My connection</label>
+  <select id="t-net">
+    <option value="off">Normal</option>
+    <option value="uneven">Uneven</option>
+    <option value="bad">Bad, with stalls</option>
+  </select>
+  <label class="t-row" for="t-smooth"><input type="checkbox" id="t-smooth" checked> Smooth their line</label>
+  <span id="t-stat" role="status">Buffer: none yet</span>
+</div>
+
 <div id="dock">
-  <div id="who"><span class="dot" aria-hidden="true"></span><span id="who-text" role="status">Connecting</span><button id="invite" type="button">Copy invite link</button></div>
-  <div id="tray" role="group" aria-label="Pigment">
+  <div id="who"><span class="dot" aria-hidden="true"></span><span id="who-text" role="status">Connecting</span><button id="invite" type="button">Copy link</button></div>
+  <div id="tray" role="group" aria-label="Line width, paint and clear">
+    <div id="sizes" role="group" aria-label="Line width" hidden></div>
     <button class="pig" id="pig-indigo" style="--c:#8fa3d9" aria-label="Blue" aria-pressed="true"><span></span></button>
     <button class="pig" id="pig-rose" style="--c:#e8a0b0" aria-label="Rose" aria-pressed="false"><span></span></button>
     <button class="pig" id="pig-green" style="--c:#9ccb9a" aria-label="Green" aria-pressed="false"><span></span></button>
     <button class="pig" id="pig-ochre" style="--c:#f0cf82" aria-label="Yellow" aria-pressed="false"><span></span></button>
     <button class="pig" id="pig-violet" style="--c:#bea3de" aria-label="Violet" aria-pressed="false"><span></span></button>
     <button class="pig" id="pig-black" style="--c:#34333b" aria-label="Black" aria-pressed="false"><span></span></button>
+    <button class="pig" id="pig-white" style="--c:#ffffff" aria-label="White" aria-pressed="false"><span></span></button>
     <button class="pig" id="pig-sparkle" style="--c:conic-gradient(from 40deg,#f3d7a0,#f0b3c8,#c4b5ea,#a9d8e6,#f3d7a0)" aria-label="Sparkle" aria-pressed="false"><span></span></button>
-    <button id="fresh" type="button">Clear</button>
+    <span class="sep" aria-hidden="true"></span>
+    <button id="size" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="sizes"></button>
+    <button id="fresh" type="button" aria-label="Clear the sheet for everyone" title="Clear"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 10.5v5.5M13.5 10.5v5.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
 </div>
 
@@ -172,8 +232,15 @@
   var CELL = 4;
   var INK = "#2e2d38";
   var SHEET = "#eeede8";
-  var PIGMENTS = ["#8fa3d9", "#e8a0b0", "#9ccb9a", "#f0cf82", "#bea3de", "#34333b", "#cfc5e2"];   // soft, chalky; then black; the last is the pearly base of the sparkle paint
-  var SPARKLE = 6;
+  var PIGMENTS = ["#8fa3d9", "#e8a0b0", "#9ccb9a", "#f0cf82", "#bea3de", "#34333b", "#ffffff", "#cfc5e2"];   // soft, chalky; black; white; the last is the pearly base of the sparkle paint
+  var WHITE = 6, SPARKLE = 7;
+  var COVER = 2.2;       // how quickly white builds up to fully covering
+  // line widths, in px on a 390 px wide page
+  var SIZES = [
+    { w: 1.2, name: "Extra thin" }, { w: 2, name: "Thin" }, { w: 3, name: "Medium" },
+    { w: 4.5, name: "Thick" }, { w: 6.5, name: "Extra thick" }
+  ];
+  var sizeIx = 2;
   var GLINTS = ["#e3ab3f", "#e57aa2", "#5bbccd", "#9580dc", "#f0c86a"];   // glitter flecks: gold, pink, aqua, violet
   var FLECK_LIFE = TINT + GROW + HANDOFF + SPREAD * 0.75;
   function rgbOf(hex) { return [1, 3, 5].map(function (i) { return parseInt(hex.slice(i, i + 2), 16); }); }
@@ -193,8 +260,16 @@
   var pc = paper.getContext("2d");
   var sx = stain.getContext("2d");
   var wc = paint.getContext("2d");
-  var ic = ink.getContext("2d");
+  var ic = ink.getContext("2d"), inkCtx = ic;
   var glit = document.getElementById("glit"), gc = glit.getContext("2d");
+  /* White paint cannot work by multiplying like the others (white multiplies to nothing),
+     so it covers instead: fresh white lines go on "wink" and wet white wash on "wpaint",
+     both laid normally over the colour; when it soaks in it is painted onto the sheet.
+     The sheet ("stain") is itself an opaque picture: the paper colour, with colour
+     multiplied into it and white painted over it. */
+  var wpaint = document.getElementById("wpaint"), wpc = wpaint.getContext("2d");
+  var wink = document.getElementById("wink"), kc = wink.getContext("2d");
+  var wimg = null;
   var maskCanvas = document.createElement("canvas");
   var mx = maskCanvas.getContext("2d", { willReadFrequently: true });
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -248,8 +323,8 @@
 
     W = w; H = h; dpr = nd;
     U = W / 390;
-    paper.width = ink.width = glit.width = Math.round(W * dpr);
-    paper.height = ink.height = glit.height = Math.round(H * dpr);
+    paper.width = ink.width = wink.width = glit.width = Math.round(W * dpr);
+    paper.height = ink.height = wink.height = glit.height = Math.round(H * dpr);
     layPaper();
 
     // the page is always 150 cells wide, so the wash behaves the same on every screen
@@ -257,14 +332,16 @@
     GH = Math.max(2, Math.ceil(H / (W / GW)));
     N = GW * GH;
     cellPx = W / GW;
-    stain.width = paint.width = maskCanvas.width = bakeCanvas.width = GW;
-    stain.height = paint.height = maskCanvas.height = bakeCanvas.height = GH;
-    sx.fillStyle = "#fff";
+    stain.width = paint.width = wpaint.width = maskCanvas.width = bakeCanvas.width = GW;
+    stain.height = paint.height = wpaint.height = maskCanvas.height = bakeCanvas.height = GH;
+    sx.fillStyle = SHEET;
     sx.fillRect(0, 0, GW, GH);
     if (old) { sx.imageSmoothingEnabled = true; sx.drawImage(old, 0, 0, GW, GH); }
     spare = [];
     img = wc.createImageData(GW, GH);
     for (var j = 3; j < img.data.length; j += 4) img.data[j] = 255;
+    wimg = wpc.createImageData(GW, GH);
+    for (j = 0; j < wimg.data.length; j += 4) wimg.data[j] = wimg.data[j + 1] = wimg.data[j + 2] = 255;
     washes = []; flecks = [];
     start();
     if (net && net.ready) announce();
@@ -310,16 +387,36 @@
      never by becoming see-through. Solid paint cannot add up where parts of a line
      overlap or where two runs meet, so crossings and tight corners stay steady. */
   var tone = [0, 0, 0];
-  function styleFor(s, a) {
+  function styleFor(s, a, c) {
     if (a >= END) return false;
     var g = a < 0 ? 0 : Math.min(1, (a - TINT) / GROW), k = ABSORB[s.pig];
     // fresh: the full swatch colour at pen width; then swelling and paling together
     // down to the depth the wash starts at; then fading out as the wash comes up underneath
     var depth = (1 + (STRENGTH * THIN - 1) * g) * (a < 0 ? 1 : 1 - smooth(TINT + GROW, END, a));
-    tone[0] = 255 * Math.exp(-depth * k[0]); tone[1] = 255 * Math.exp(-depth * k[1]); tone[2] = 255 * Math.exp(-depth * k[2]);
-    ic.strokeStyle = ic.fillStyle = "rgb(" + Math.round(tone[0]) + "," + Math.round(tone[1]) + "," + Math.round(tone[2]) + ")";
+    if (s.pig === WHITE) {
+      // white: how much it covers, matching the white wash it hands over to
+      styleFor.a = a < 0 ? 1 : 1 - Math.exp(-COVER * depth);
+      c.strokeStyle = c.fillStyle = "#fff";
+    } else {
+      tone[0] = 255 * Math.exp(-depth * k[0]); tone[1] = 255 * Math.exp(-depth * k[1]); tone[2] = 255 * Math.exp(-depth * k[2]);
+      c.strokeStyle = c.fillStyle = "rgb(" + Math.round(tone[0]) + "," + Math.round(tone[1]) + "," + Math.round(tone[2]) + ")";
+      styleFor.a = 1;
+    }
     styleFor.w = s.w * U * (1 + g * (LINE / PEN - 1));
     return true;
+  }
+
+  // lay one shape; white is see-through, so it first clears its own footprint and never adds up with itself
+  function lay(c, fill) {
+    if (styleFor.a < 1) {
+      c.globalCompositeOperation = "destination-out";
+      c.globalAlpha = 1;
+      if (fill) c.fill(); else c.stroke();
+      c.globalCompositeOperation = "source-over";
+    }
+    c.globalAlpha = styleFor.a;
+    if (fill) c.fill(); else c.stroke();
+    c.globalAlpha = 1;
   }
 
   /* Draw one stroke with every bit of it styled by its own age. The line is cut into
@@ -330,18 +427,19 @@
   function drawStroke(s, now) {
     var pts = s.pts, n = pts.length;
     if (!n) return !s.up;
+    var ic = s.pig === WHITE ? kc : inkCtx;
     ic.lineJoin = "round";
     ic.lineCap = "butt";
     ic.globalAlpha = 1;
     if (n === 1) {
-      if (styleFor(s, lookAge(now, s, pts[0].t))) {
-        ic.beginPath(); ic.arc(pts[0].x, pts[0].y, styleFor.w / 2, 0, 6.2832); ic.fill();
+      if (styleFor(s, lookAge(now, s, pts[0].t), ic)) {
+        ic.beginPath(); ic.arc(pts[0].x, pts[0].y, styleFor.w / 2, 0, 6.2832); lay(ic, true);
       }
     }
     // piece k of the curve runs from the midpoint before point k-1 to the midpoint after it
     for (var r = 1; r < n; r += RUN) {
       var last = Math.min(n - 1, r + RUN - 1);
-      if (!styleFor(s, lookAge(now, s, pts[last].t))) continue;
+      if (!styleFor(s, lookAge(now, s, pts[last].t), ic)) continue;
       var b = r > 1 ? r - 1 : 1;
       ic.beginPath();
       if (b === 1) ic.moveTo(pts[0].x, pts[0].y);
@@ -351,7 +449,7 @@
       }
       if (last === n - 1) ic.lineTo(pts[last].x, pts[last].y);
       ic.lineWidth = styleFor.w;
-      ic.stroke();
+      lay(ic, false);
     }
     return !s.up || s.cut < n || lookAge(now, s, pts[n - 1].t) < END;
   }
@@ -363,7 +461,7 @@
     while (n - s.cut >= CHUNK || (s.up && s.cut < n)) {
       var end = Math.min(n, s.cut + CHUNK), from = Math.max(0, s.cut - 1);
       var piece = { pts: s.pts.slice(from, end), w: s.w }, t0 = s.pts[end - 1].t;
-      washes.push({ mask: makeMask([piece], n === 1), k: ABSORB[s.pig], added: 0, begun: false, older: null, younger: null, share: 0, t0: t0, src: s });
+      washes.push({ mask: makeMask([piece], n === 1), k: ABSORB[s.pig], white: s.pig === WHITE, added: 0, begun: false, older: null, younger: null, share: 0, t0: t0, src: s });
       if (s.pig === SPARKLE && !reduce) scatter(piece, t0, s);
       s.cut = end;
     }
@@ -389,9 +487,10 @@
     var bufs = spare.pop();
     if (!bufs) {
       bufs = { A: [], B: [] };
-      for (var i = 0; i < 3; i++) { bufs.A.push(new Float32Array(N)); bufs.B.push(new Float32Array(N)); }
+      // red, green and blue absorbed, then how much white covers
+      for (var i = 0; i < 4; i++) { bufs.A.push(new Float32Array(N)); bufs.B.push(new Float32Array(N)); }
     }
-    var p = { A: bufs.A, B: bufs.B, slot: slot, start: slot * POOL_GAP, applied: 0, x0: GW, y0: GH, x1: 0, y1: 0, fed: -1 };
+    var p = { A: bufs.A, B: bufs.B, slot: slot, start: slot * POOL_GAP, applied: 0, x0: GW, y0: GH, x1: 0, y1: 0, fed: -1, white: false };
     pools.push(p);
     return p;
   }
@@ -410,8 +509,21 @@
     }
   }
 
+  // white of the given pools, summed, as cover (alpha) in wimg for one patch of the grid
+  function fillWhite(list, x0, y0, x1, y1) {
+    var d = wimg.data, n = list.length;
+    for (var y = y0; y < y1; y++) {
+      for (var x = x0; x < x1; x++) {
+        var i = y * GW + x, v = 0;
+        for (var q = 0; q < n; q++) if (list[q].white) v += list[q].A[3][i];
+        d[i * 4 + 3] = v > 0 ? 255 * (1 - Math.exp(-COVER * v)) : 0;
+      }
+    }
+  }
+
   function render() {
     wc.clearRect(0, 0, GW, GH);
+    wpc.clearRect(0, 0, GW, GH);
     if (!pools.length) return;
     var x0 = GW, y0 = GH, x1 = 0, y1 = 0;
     for (var q = 0; q < pools.length; q++) {
@@ -424,6 +536,11 @@
     if (x1 <= x0 || y1 <= y0) return;
     fill(pools, x0, y0, x1, y1);
     wc.putImageData(img, 0, 0, x0, y0, x1 - x0, y1 - y0);
+    for (q = 0; q < pools.length; q++) if (pools[q].white) {
+      fillWhite(pools, x0, y0, x1, y1);
+      wpc.putImageData(wimg, 0, 0, x0, y0, x1 - x0, y1 - y0);
+      break;
+    }
   }
 
   // a pool has stopped moving: make it part of the sheet for good, and free its grid
@@ -436,8 +553,14 @@
       sx.imageSmoothingEnabled = false;
       sx.drawImage(bakeCanvas, 0, 0);
       sx.globalCompositeOperation = "source-over";
+      if (p.white) {
+        fillWhite([p], p.x0, p.y0, p.x1, p.y1);
+        bx.clearRect(0, 0, GW, GH);
+        bx.putImageData(wimg, 0, 0, p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0);
+        sx.drawImage(bakeCanvas, 0, 0);
+      }
     }
-    for (var i = 0; i < 3; i++) { p.A[i].fill(0); p.B[i].fill(0); }
+    for (var i = 0; i < p.A.length; i++) { p.A[i].fill(0); p.B[i].fill(0); }
     if (p.A[0].length === N) spare.push({ A: p.A, B: p.B });
   }
 
@@ -484,7 +607,8 @@
   function addTo(p, wash, amount) {
     if (amount <= 0) return;
     var k = wash.k, mk = wash.mask, m = mk.m;
-    var r = p.A[0], g = p.A[1], b = p.A[2];
+    var r = p.A[0], g = p.A[1], b = p.A[2], wh = p.A[3], white = wash.white;
+    if (white) p.white = true;
     if (mk.x0 < p.x0) p.x0 = mk.x0;
     if (mk.y0 < p.y0) p.y0 = mk.y0;
     if (mk.x0 + mk.w > p.x1) p.x1 = mk.x0 + mk.w;
@@ -495,6 +619,7 @@
         var v = m[src + x];
         if (v > 0) {
           v *= amount;
+          if (white) { wh[dst + x] += v; continue; }
           r[dst + x] += v * k[0];
           g[dst + x] += v * k[1];
           b[dst + x] += v * k[2];
@@ -577,13 +702,15 @@
   function frame(now) {
     ic.setTransform(dpr, 0, 0, dpr, 0, 0);
     ic.clearRect(0, 0, W, H);
+    kc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    kc.clearRect(0, 0, W, H);
 
     if (net.ready && drawing && now - lastSend >= 30) { lastSend = now; send(drawing, false); }
 
     var pending = false, order = [];
     for (var key in groups) {
       var grp = groups[key];
-      if (grp.live) expire(grp, now);
+      if (grp.live) { playout(grp, now); expire(grp, now); }
       for (var i = 0; i < grp.strokes.length; i++) { emitChunks(grp.strokes[i]); order.push(grp.strokes[i]); }
       grp.strokes = [];
     }
@@ -637,7 +764,7 @@
           if (p.y0 > 0) p.y0--;
           if (p.x1 < GW) p.x1++;
           if (p.y1 < GH) p.y1++;
-          for (var c = 0; c < 3; c++) {
+          for (var c = 0, nc = p.white ? 4 : 3; c < nc; c++) {
             diffuse(p.A[c], p.B[c], GW, p.x0, p.y0, p.x1, p.y1, k);
             swap = p.A[c]; p.A[c] = p.B[c]; p.B[c] = swap;
           }
@@ -668,12 +795,43 @@
     if (dx * dx + dy * dy > 1.5) { p.t = performance.now(); pts.push(p); }
   }
 
+  /* Line width: the button shows a dot as wide as the current line. Pressing it opens a
+     drawer above the tray with every width drawn as a short stroke; picking one closes
+     it, and so does touching the sheet, pressing the button again, or Escape. */
+  var sizeBtn = document.getElementById("size"), drawer = document.getElementById("sizes");
+  function openDrawer(open) {
+    drawer.hidden = !open;
+    sizeBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  (function () {
+    var opts = SIZES.map(function (s, i) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-label", s.name);
+      b.innerHTML = '<svg viewBox="0 0 34 24" aria-hidden="true"><path d="M5 15 Q 12 6, 17 12 T 29 9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="' + (s.w * 0.9).toFixed(2) + '"/></svg>';
+      b.addEventListener("click", function () { sizeIx = i; showSize(); openDrawer(false); });
+      drawer.appendChild(b);
+      return b;
+    });
+    function showSize() {
+      // a short wavy stroke at the current width, like the ones in the drawer
+      sizeBtn.innerHTML = '<svg viewBox="0 0 26 26" aria-hidden="true"><path d="M6.5 15.5 Q 10 9, 13 13 T 19.5 10.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="' + (0.6 + SIZES[sizeIx].w * 0.62).toFixed(2) + '"/></svg>';
+      sizeBtn.setAttribute("aria-label", "Line width: " + SIZES[sizeIx].name);
+      sizeBtn.title = "Line width: " + SIZES[sizeIx].name;
+      opts.forEach(function (o, k) { o.setAttribute("aria-pressed", k === sizeIx ? "true" : "false"); });
+    }
+    sizeBtn.addEventListener("click", function () { openDrawer(drawer.hidden); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") openDrawer(false); });
+    showSize();
+  })();
+
   ink.addEventListener("pointerdown", function (e) {
     if (e.button) return;
     e.preventDefault();
+    openDrawer(false);
     try { ink.setPointerCapture(e.pointerId); } catch (err) {}
     if (drawing) finish();
-    drawing = { pts: [pos(e)], pig: pigment, w: e.pointerType === "pen" ? 2.4 : 3, id: e.pointerId, sid: ++seq, sent: 0, cut: 0 };
+    drawing = { pts: [pos(e)], pig: pigment, w: SIZES[sizeIx].w, id: e.pointerId, sid: ++seq, sent: 0, cut: 0 };
     drawing.pts[0].t = performance.now();
     drawing.home = me;
     me.strokes.push(drawing);
@@ -693,8 +851,8 @@
     finish();
   }
   function finish() {
-    send(drawing, true);
     drawing.up = me.lastUp = performance.now();
+    send(drawing, true);
     drawing = null;
     me.active = 0;
   }
@@ -705,6 +863,7 @@
   var pigs = Array.prototype.slice.call(document.querySelectorAll(".pig"));
   pigs.forEach(function (b, i) {
     b.addEventListener("click", function () {
+      openDrawer(false);
       pigment = i;
       pigs.forEach(function (o, k) { o.setAttribute("aria-pressed", k === i ? "true" : "false"); });
     });
@@ -717,22 +876,44 @@
     washes = []; drawing = null; flecks = [];
     while (pools.length) {
       var p = pools.pop();
-      for (var i = 0; i < 3; i++) { p.A[i].fill(0); p.B[i].fill(0); }
+      for (var i = 0; i < p.A.length; i++) { p.A[i].fill(0); p.B[i].fill(0); }
       spare.push({ A: p.A, B: p.B });
     }
     wc.clearRect(0, 0, GW, GH);
+    wpc.clearRect(0, 0, GW, GH);
+    kc.setTransform(1, 0, 0, 1, 0, 0);
+    kc.clearRect(0, 0, wink.width, wink.height);
     sx.globalCompositeOperation = "source-over";
-    sx.fillStyle = "#fff";
+    sx.fillStyle = SHEET;
     sx.fillRect(0, 0, GW, GH);
     ic.setTransform(1, 0, 0, 1, 0, 0);
     ic.clearRect(0, 0, ink.width, ink.height);
     gc.setTransform(1, 0, 0, 1, 0, 0);
     gc.clearRect(0, 0, glit.width, glit.height);
   }
-  document.getElementById("fresh").addEventListener("click", function () {
-    freshSheet();
-    net.emit("fresh", {});
-  });
+  /* Clear wipes both screens, so it takes two taps: the first turns the button red,
+     a second within three seconds clears. */
+  (function () {
+    var btn = document.getElementById("fresh"), timer = 0;
+    function disarm() {
+      clearTimeout(timer);
+      btn.classList.remove("armed");
+      btn.setAttribute("aria-label", "Clear the sheet for everyone");
+    }
+    btn.addEventListener("click", function () {
+      openDrawer(false);
+      if (!btn.classList.contains("armed")) {
+        btn.classList.add("armed");
+        btn.setAttribute("aria-label", "Tap again to clear the sheet for everyone");
+        timer = setTimeout(disarm, 3000);
+        return;
+      }
+      disarm();
+      freshSheet();
+      net.emit("fresh", {});
+    });
+    ink.addEventListener("pointerdown", disarm);
+  })();
 
   /* ---- other people ----
      Everyone in the room hears each stroke as it is drawn and replays it locally,
@@ -747,11 +928,17 @@
     var from = s.sent, n = s.pts.length;
     if (from >= n && !end) return;
     do {
-      var to = Math.min(n, from + 300), arr = [];
+      var to = Math.min(n, from + 300), arr = [], dts = [];
+      var b = from < n ? Math.round(s.pts[from].t) : 0;
       for (var i = from; i < to; i++) {
         arr.push(Math.round(s.pts[i].x / W * 9999), Math.round((s.pts[i].y - H / 2) / W * 9999));
+        dts.push(Math.round(s.pts[i].t) - b);
       }
-      net.emit("ink", { id: s.sid, p: s.pig, f: from, pts: arr, end: !!(end && to >= n) });
+      var last = to >= n && end;
+      // b: when the first point was drawn, dt: when each point was drawn after that,
+      // s: when this was sent, e: when the finger lifted (all on the sender's own clock, ms)
+      net.emit("ink", { id: s.sid, p: s.pig, w: s.w, f: from, pts: arr, b: b, dt: dts, s: Math.round(performance.now()),
+                        e: last ? Math.round(s.up || performance.now()) : undefined, end: !!last });
       from = to;
     } while (from < n);
     s.sent = n;
@@ -766,33 +953,133 @@
     var d = msg.data;
     if (!d || typeof d !== "object" || !Array.isArray(d.pts)) return;
     var key = "r:" + msg.peer;
-    var grp = groups[key] || (groups[key] = { strokes: [], active: 0, lastUp: 0, live: {} });
+    var grp = groups[key] || (groups[key] = { strokes: [], active: 0, lastUp: 0, live: {}, play: -Infinity });
     var id = String(d.id).slice(0, 24);
     var now = performance.now();
     var s = grp.live[id];
     if (!s) {
       if (!d.pts.length || grp.strokes.length > 400) return;
       var p = d.p | 0;
-      s = { pts: [], pig: p >= 0 && p < PIGMENTS.length ? p : 0, w: 3, at: now, cut: 0 };
+      var wd = +d.w;
+      s = { pts: [], q: [], pig: p >= 0 && p < PIGMENTS.length ? p : 0, w: wd >= 1 && wd <= 8 ? wd : 3, at: now, cut: 0 };
       grp.live[id] = s;
       s.home = grp;
       grp.strokes.push(s);
       grp.active++;
     }
     s.at = now;
-    var f = d.f | 0;
-    if (f >= s.cut && f < s.pts.length) s.pts.length = f;   // a resend replaces what it overlaps (unless already handed to the wash)
-    for (var i = 0; i + 1 < d.pts.length && i < 800 && s.pts.length < 6000; i += 2) {
-      s.pts.push({ x: unit(d.pts[i]) * W, y: H / 2 + fromMiddle(d.pts[i + 1]) * W, t: now });
+    var sent = num(d.s), b = num(d.b), dt = Array.isArray(d.dt) ? d.dt : [];
+    var timed = sent !== null && b !== null;
+    // how long after the first of these points was drawn they got here (on their clock vs mine)
+    if (timed) heard(grp, now - (d.pts.length ? b : sent), now);
+    var f = d.f | 0, have = s.pts.length + s.q.length, skip = Math.max(0, have - f) * 2;   // never take a point twice
+    var earliest = Infinity;
+    for (var i = skip; i + 1 < d.pts.length && i < 800 && have < 6000; i += 2, have++) {
+      var st = timed ? b + clampInt(dt[i >> 1], 0, 600000) : null;
+      s.q.push({ x: unit(d.pts[i]) * W, y: H / 2 + fromMiddle(d.pts[i + 1]) * W, st: st });
+      if (st !== null && st < earliest) earliest = st;
     }
-    if (d.end) { delete grp.live[id]; grp.active--; s.up = grp.lastUp = now; }
+    // something arrived that should already be showing: play it from where it starts
+    if (earliest < grp.play) grp.play = earliest;
+    if (d.end) {
+      var e = num(d.e);
+      s.endSt = e !== null ? e : -Infinity;
+      if (s.endSt < grp.play && s.endSt > -Infinity) grp.play = Math.min(grp.play, s.endSt);
+      delete grp.live[id];
+      s.ending = true;
+    }
     start();
+  }
+
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : null; }
+  function clampInt(v, lo, hi) { v = +v; return isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : lo; }
+
+  /* ---- smoothing out their line ----
+     Points arrive unevenly (mobile data holds some back, then delivers several at once),
+     so their strokes are not drawn on arrival. Each point carries when it was drawn on
+     their clock, and is shown at that moment plus a short, steady delay ("buffer").
+     1. The buffer adapts. Each message says when it was sent; comparing that with when
+        it arrived, against the fastest recent arrival, shows how late it was. If one is
+        later than usual keep arriving, the buffer grows at once to cover them, then
+        shrinks slowly (over a few seconds) once arrivals are steady again. It is sized to
+        how late arrivals usually are, not to the rare stall, so the delay stays small.
+     2. After a stall, it catches up smoothly. When late points do arrive, playback starts
+        from where they begin and runs at 1.5x speed until it is back on time, so the line
+        is briefly hurried instead of appearing all at once. A backlog of more than
+        1.5 seconds is skipped straight to (it would take too long to catch up). */
+  var BUF_MIN = 60, BUF_MAX = 900, BUF_MARGIN = 30, CATCH_UP = 1.5, SNAP = 1500;
+  var smoothing = true;   // test switch: off draws their line the moment it arrives
+  var SPIKE = 250;   // ms later than the buffer allows: counts as a stall, not as ordinary unevenness
+
+  function heard(grp, v, now) {
+    var h = grp.hist || (grp.hist = []), sp = grp.spikes || (grp.spikes = []);
+    /* A stall holds everything back, then delivers it in one burst. That burst says
+       nothing about how uneven the connection usually is, so it is kept out of the
+       buffer's sizing and caught up instead. Only if stalls keep happening (3 within
+       10 seconds) does the buffer grow to absorb them. */
+    var stall = grp.base !== undefined && v - grp.base > grp.buf + SPIKE;
+    if (stall && now >= (grp.burstUntil || 0)) sp.push({ at: now, v: v - grp.base });
+    if (stall) grp.burstUntil = now + 150;
+    h.push({ at: now, v: v, burst: now < (grp.burstUntil || 0) });
+    while (h.length && now - h[0].at > 20000) h.shift();
+    while (sp.length && now - sp[0].at > 10000) sp.shift();
+    var base = Infinity, i;
+    for (i = 0; i < h.length; i++) if (h[i].v < base) base = h[i].v;
+    var first = grp.base === undefined;
+    if (!first && base > grp.base) grp.play -= base - grp.base;   // keep playback where it was if the baseline moves
+    grp.base = base;
+    // how late arrivals have usually been over the last few seconds sets the buffer.
+    // A rare stall is left out (the 90th percentile, not the worst): growing the buffer
+    // for it would only delay everything after it, so a stall is caught up instead.
+    var late = [];
+    for (i = 0; i < h.length; i++) if (now - h[i].at < 3000 && !h[i].burst) late.push(h[i].v - base);
+    late.sort(function (x, y) { return x - y; });
+    var need = late.length ? late[Math.min(late.length - 1, Math.floor(late.length * 0.9))] : 0;
+    if (sp.length >= 3) {
+      var sv = sp.map(function (x) { return x.v; }).sort(function (x, y) { return x - y; });
+      need = Math.max(need, sv[sv.length >> 1]);
+    }
+    grp.need = Math.min(BUF_MAX, Math.max(BUF_MIN, need + BUF_MARGIN));
+    if (grp.buf === undefined || grp.need > grp.buf) grp.buf = grp.need;   // grow at once
+    if (first) grp.play = now - grp.base - grp.buf;
+  }
+
+  // reveal the points whose time has come, at the pace they were drawn
+  function playout(grp, now) {
+    var dt = Math.min(100, now - (grp.last || now));
+    grp.last = now;
+    if (grp.base === undefined || !smoothing) {   // no timing from the sender (or smoothing switched off): show on arrival
+      for (var k = 0; k < grp.strokes.length; k++) reveal(grp, grp.strokes[k], Infinity, now);
+      return;
+    }
+    if (grp.buf > grp.need) grp.buf = Math.max(grp.need, grp.buf - (grp.buf - grp.need) * Math.min(1, dt / 3000));   // shrink slowly
+    var target = now - grp.base - grp.buf;
+    if (target - grp.play > SNAP) grp.play = target;
+    else if (grp.play < target) grp.play = Math.min(target, grp.play + dt * CATCH_UP);
+    for (var i = 0; i < grp.strokes.length; i++) reveal(grp, grp.strokes[i], grp.play, now);
+  }
+
+  function reveal(grp, s, upTo, now) {
+    if (!s.q) return;
+    while (s.q.length && (s.q[0].st === null || s.q[0].st <= upTo)) {
+      var q = s.q.shift();
+      s.pts.push({ x: q.x, y: q.y, t: now });
+    }
+    if (s.ending && !s.q.length && s.endSt <= upTo) {
+      s.ending = false;
+      s.up = grp.lastUp = now;
+      grp.active--;
+    }
   }
 
   // a stroke whose ending never arrived is treated as lifted after a short silence
   function expire(grp, now) {
     for (var id in grp.live) {
-      if (now - grp.live[id].at > 2500) { grp.live[id].up = grp.lastUp = now; delete grp.live[id]; grp.active--; }
+      var s = grp.live[id];
+      if (now - s.at > 2500 + (grp.buf || 0)) {
+        while (s.q && s.q.length) { var q = s.q.shift(); s.pts.push({ x: q.x, y: q.y, t: now }); }
+        s.up = grp.lastUp = now; delete grp.live[id]; grp.active--;
+      }
     }
     if (grp.active < 0) grp.active = 0;
   }
@@ -833,17 +1120,41 @@
     if (showIt) { top.style.top = cut + "px"; bot.style.top = (H - cut) + "px"; }
   }
 
+  /* Test only: hold back what this phone sends, the way a bad connection would.
+     Messages keep their order, like the real channel. */
+  var fakeNet = "off", outbox = [], outTimer = 0, outLast = 0, stallUntil = 0, nextStall = 0;
+  function fakeDelay(now) {
+    if (fakeNet === "uneven") return 40 + Math.random() * 250;
+    if (fakeNet === "bad") {
+      if (now >= nextStall) { stallUntil = now + 600 + Math.random() * 500; nextStall = stallUntil + 4000 + Math.random() * 4000; }
+      return 80 + Math.random() * 350 + (now < stallUntil ? stallUntil - now : 0);
+    }
+    return 0;
+  }
+  function flushOut() {
+    var now = performance.now();
+    while (outbox.length && outbox[0].due <= now + 1) { var m = outbox.shift(); realEmit(m.topic, m.data); }
+    outTimer = outbox.length ? setTimeout(flushOut, Math.max(0, outbox[0].due - now)) : 0;
+  }
+
   var net = {
     ready: false,
     emit: function (topic, data) {
+      if (fakeNet === "off" && !outbox.length) return realEmit(topic, data);
+      var now = performance.now(), due = Math.max(now + fakeDelay(now), outLast);
+      outLast = due;
+      outbox.push({ topic: topic, data: JSON.parse(JSON.stringify(data)), due: due });
+      if (!outTimer) outTimer = setTimeout(flushOut, Math.max(0, due - now));
+    }
+  };
+  function realEmit(topic, data) {
       var i;
       if (isHost) {
         for (i = 0; i < guests.length; i++) post(guests[i], { t: topic, d: data, from: "host" });
       } else if (hostConn) {
         post(hostConn, { t: topic, d: data });
       }
-    }
-  };
+  }
   function post(conn, m) { try { if (conn.open) conn.send(m); } catch (err) {} }
 
   function show() {
@@ -974,10 +1285,12 @@
       var c = document.createElement("canvas");
       c.width = GW; c.height = GH;
       var x = c.getContext("2d");
-      x.fillStyle = "#fff";
-      x.fillRect(0, 0, GW, GH);
       x.drawImage(stain, 0, 0);
-      if (pools.length) { render(); x.globalCompositeOperation = "multiply"; x.drawImage(paint, 0, 0); }
+      if (pools.length) {
+        render();
+        x.globalCompositeOperation = "multiply"; x.drawImage(paint, 0, 0);
+        x.globalCompositeOperation = "source-over"; x.drawImage(wpaint, 0, 0);
+      }
       return c.toDataURL("image/png");
     } catch (err) { return ""; }
   }
@@ -987,21 +1300,20 @@
     gotSnapshot = true;
     var im = new Image();
     im.onload = function () {
-      sx.globalCompositeOperation = "multiply";
+      sx.globalCompositeOperation = "source-over";
       sx.imageSmoothingEnabled = true;
       var hh = im.height * GW / im.width;
       sx.drawImage(im, 0, (GH - hh) / 2, GW, hh);
-      sx.globalCompositeOperation = "source-over";
     };
     im.src = url;
   }
 
   var invite = document.getElementById("invite");
   invite.addEventListener("click", function () {
-    var url = location.href;
+    var url = location.origin + location.pathname + location.hash;   // without ?test
     function done(ok) {
-      invite.textContent = ok ? "Link copied" : "Copy it from the address bar";
-      setTimeout(function () { invite.textContent = "Copy invite link"; }, 2200);
+      invite.textContent = ok ? "Link copied" : "Copy the address";
+      setTimeout(function () { invite.textContent = "Copy link"; }, 2200);
     }
     function oldWay() {
       try {
@@ -1017,6 +1329,19 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function () { done(true); }, oldWay);
     else oldWay();
   });
+
+  (function () {
+    if (!/[?&]test\b/.test(location.search)) return;
+    var panel = document.getElementById("testpanel"), stat = document.getElementById("t-stat");
+    panel.hidden = false;
+    document.getElementById("t-net").addEventListener("change", function (e) { fakeNet = e.target.value; });
+    document.getElementById("t-smooth").addEventListener("change", function (e) { smoothing = e.target.checked; });
+    setInterval(function () {
+      var shown = "none yet";
+      for (var k in groups) if (groups[k].buf !== undefined) shown = Math.round(groups[k].buf) + " ms";
+      stat.textContent = smoothing ? "Buffer: " + shown : "Buffer: off";
+    }, 500);
+  })();
 
   function connect() {
     show();
