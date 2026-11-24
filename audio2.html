@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a2233">
+<title>Earshot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/*
+  Earshot — a tiny shared room for two people far apart.
+  three.js room, PeerJS (WebRTC) p2p link + voice, Web Audio HRTF panning with a distance fade.
+  Closeness: first-person hands (stroke each other's hand), hug, couch cuddle, heartbeat taps, boops.
+*/
+:root{--plum:#2a2233;--ink:#fff4ea;--coral:#ff7a59;--mint:#4fd1b5;--lamp:#ffcf8a;--glass:rgba(30,22,38,.62)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--plum);color:var(--ink);
+  font:16px/1.45 Nunito,system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+button,input{font:inherit;color:inherit}
+.pill{background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);border-radius:999px}
+
+/* lobby */
+#lobby{position:fixed;inset:0;display:grid;place-items:center;padding:24px;z-index:10;
+  background:radial-gradient(120% 90% at 50% 10%,#4a3550 0%,#2a2233 55%,#1b1622 100%)}
+#lobby .card{width:min(420px,100%);text-align:center}
+#lobby h1{font:600 clamp(44px,12vw,64px)/1 Fredoka,sans-serif;margin:0 0 6px;letter-spacing:.5px}
+#lobby h1 span{color:var(--lamp)}
+#lobby p{margin:0 auto 22px;max-width:36ch;opacity:.82}
+.blobs{display:flex;justify-content:center;gap:18px;margin:0 0 22px}
+.blob{width:46px;height:62px;border-radius:23px;position:relative;box-shadow:inset -6px -8px 0 rgba(0,0,0,.18)}
+.blob::before,.blob::after{content:"";position:absolute;top:18px;width:7px;height:9px;border-radius:50%;background:#1b1622}
+.blob::before{left:13px}.blob::after{right:13px}
+.blob.a{background:var(--coral);animation:bob 2.4s ease-in-out infinite}
+.blob.b{background:var(--mint);animation:bob 2.4s ease-in-out .6s infinite}
+@keyframes bob{50%{transform:translateY(-6px)}}
+.row{display:flex;gap:10px}
+#code{flex:1;min-width:0;height:54px;border-radius:16px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);
+  text-align:center;font:600 24px Fredoka,sans-serif;letter-spacing:6px;text-transform:uppercase;outline:none}
+#code:focus{border-color:var(--lamp)}
+#go{height:54px;padding:0 22px;border:0;border-radius:16px;background:var(--lamp);color:#2a2233;font-weight:700;cursor:pointer}
+#go:disabled{opacity:.6}
+.fine{font-size:13px;opacity:.65;margin-top:16px}
+
+/* hud */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5;display:none}
+#status{position:absolute;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));
+  padding:8px 14px 8px 12px;display:flex;align-items:center;gap:9px;font-size:14px;max-width:calc(100vw - 150px)}
+#dot{width:9px;height:9px;border-radius:50%;background:#888;flex:none}
+#dot.on{background:var(--mint);box-shadow:0 0 10px var(--mint)}
+#dot.wait{background:var(--lamp);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+#stxt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#near{position:absolute;left:max(12px,env(safe-area-inset-left));top:calc(max(12px,env(safe-area-inset-top)) + 46px);
+  padding:7px 12px;font-size:13px;display:none;align-items:center;gap:9px}
+#vol{width:70px;height:6px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
+#vol i{display:block;height:100%;width:0;background:var(--mint);transition:width .15s}
+.btns{position:absolute;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));display:flex;gap:8px;pointer-events:auto}
+.btns button{width:46px;height:46px;display:grid;place-items:center;cursor:pointer;position:relative}
+svg{width:22px;height:22px;flex:none}
+#mic .ring{position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--coral);opacity:0;transition:opacity .08s}
+#mic.off{background:rgba(160,40,40,.7)}
+#acts{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));
+  display:none;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:auto}
+#acts button{height:46px;padding:0 16px 0 13px;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:15px}
+#acts button.on{background:var(--lamp);color:#2a2233;border-color:transparent}
+#acts button.ping{animation:ping 1s ease-in-out infinite}
+@keyframes ping{50%{box-shadow:0 0 0 8px rgba(255,207,138,.35)}}
+#acts button:focus-visible,.btns button:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+#help{position:absolute;bottom:max(14px,env(safe-area-inset-bottom));left:max(12px,env(safe-area-inset-left));
+  padding:7px 14px;font-size:13px;opacity:.85;max-width:calc(100vw - 170px);transition:opacity 1s}
+#toast{position:absolute;top:70px;left:50%;transform:translateX(-50%);padding:8px 14px;font-size:14px;opacity:0;transition:opacity .3s;max-width:90vw;text-align:center}
+#stick{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.15);display:none}
+#knob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(255,244,234,.55)}
+#glow{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .6s ease-out;
+  background:radial-gradient(ellipse at center,transparent 50%,rgba(255,90,120,.42) 100%)}
+.hap{position:fixed;left:-200px;top:0;opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.blob,#acts button.ping{animation:none}}
+</style>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="glow"></div>
+
+<div id="lobby">
+  <div class="card">
+    <div class="blobs"><div class="blob a"></div><div class="blob b"></div></div>
+    <h1>Ear<span>shot</span></h1>
+    <p>A little room for two. Walk close to hear each other, hold out your hand, hug, sit on the couch together, send your heartbeat.</p>
+    <div class="row">
+      <input id="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Room code">
+      <button id="go">Enter</button>
+    </div>
+    <div class="fine">Both of you type the same code, or one of you sends the link.<br>Headphones make the left/right direction work and stop echo.</div>
+  </div>
+</div>
+
+<div id="hud">
+  <div id="status" class="pill"><span id="dot"></span><span id="stxt">Starting…</span></div>
+  <div id="near" class="pill"><span id="dist">–</span><span id="vol"><i></i></span></div>
+  <div class="btns">
+    <button id="mic" class="pill" aria-label="Mute microphone"><span class="ring"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16" style="display:none"/></svg></button>
+    <button id="link" class="pill" aria-label="Copy invite link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></button>
+  </div>
+  <div id="acts">
+    <button id="bSit" class="pill" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v3"/><path d="M3 13a2 2 0 0 1 4 0v1h10v-1a2 2 0 0 1 4 0v4H3z"/><path d="M5 17v2M19 17v2"/></svg><span>Sit</span></button>
+    <button id="bBeat" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg><span>Heartbeat</span></button>
+    <button id="bHug" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="7" r="3"/><circle cx="15" cy="8" r="3"/><path d="M3 20c0-4 3-7 6-7 1.5 0 2.5.4 3 1 .5-.6 1.5-1 3-1 3 0 6 3 6 7"/><path d="M7 15l5 3 5-3"/></svg><span>Hug</span></button>
+    <button id="bHands" class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5V4a1.5 1.5 0 0 1 3 0v6.5M14 10.5V5.5a1.5 1.5 0 0 1 3 0V12M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L4.6 14a1.5 1.5 0 0 1 2.6-1.5L8 13.5"/></svg><span>Hands</span></button>
+  </div>
+  <div id="toast" class="pill"></div>
+  <div id="help" class="pill">WASD / arrows to walk · drag to look · click them to boop</div>
+  <div id="stick"><div id="knob"></div></div>
+</div>
+<div class="hap"><input type="checkbox" switch id="hsw"><label for="hsw" id="hlab">.</label></div>
+
+<script type="module">
+import * as THREE from 'three';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ================= CONFIG =================
+   Phone networks (mobile data / CGNAT) often can't connect directly.
+   A free Metered "Open Relay" TURN account fixes that (20 GB/month free):
+   sign up at metered.ca, make an app, then paste the app name + API key here. */
+const CONFIG = {
+  meteredApp: '',        // e.g. 'albert' if your dashboard says albert.metered.live
+  meteredApiKey: '',     // the TURN credentials API key from the dashboard
+  extraIceServers: [],   // or paste your own {urls, username, credential} objects
+  fullVolumeWithin: 1.5, // metres: full volume inside this
+  hearingRange: 15,      // metres: silent beyond this
+  peerServer: null,      // null = free PeerJS cloud; or {host, port, path, secure} for your own
+};
+const PREFIX = 'earshot-v1-';
+const MODES = ['walk', 'hands', 'hugwait', 'hug', 'sit'];
+
+/* ================= DOM ================= */
+const $ = id => document.getElementById(id);
+const codeIn = $('code'), goBtn = $('go');
+const ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const fromHash = location.hash.replace('#', '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+codeIn.value = fromHash || Array.from({length: 4}, () => ALPH[Math.random() * ALPH.length | 0]).join('');
+codeIn.addEventListener('input', () => codeIn.value = codeIn.value.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+codeIn.addEventListener('keydown', e => { if (e.key === 'Enter') goBtn.click(); });
+const coarse = matchMedia('(pointer:coarse)').matches;
+const HELP_WALK = coarse ? 'Left thumb to walk · drag right side to look · tap them to boop' : 'WASD / arrows to walk · drag to look · click them to boop';
+
+function setStatus(text, state) { $('stxt').textContent = text; $('dot').className = state || ''; }
+let toastT;
+function toast(msg, ms = 2600) {
+  const t = $('toast'); t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, ms);
+}
+let helpT;
+function showHelp(text) { const h = $('help'); h.textContent = text; h.style.opacity = .85; clearTimeout(helpT); helpT = setTimeout(() => h.style.opacity = 0, 7000); }
+function ping(id) { const b = $(id); b.classList.add('ping'); setTimeout(() => b.classList.remove('ping'), 8000); }
+
+/* ================= HAPTICS =================
+   Android: vibration API. iPhone has no vibration API; iOS 18+ Safari gives a tick when a
+   switch checkbox toggles, so we click a hidden one (best effort). */
+const hapLabel = $('hlab');
+let lastHap = 0;
+function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); else hapLabel.click(); } catch (e) {} }
+function haptic(ms) { const t = performance.now(); if (t - lastHap < 30) return; lastHap = t; buzz(ms); }
+function hapticBeat() { if (navigator.vibrate) buzz([28, 120, 18]); else { buzz(0); setTimeout(() => buzz(0), 150); } }
+
+/* ================= AUDIO ================= */
+let actx, master, localStream, localAnalyser, micMuted = false, micDenied = false, brushGain;
+const remote = {stream: null, el: null, src: null, panner: null, filter: null, gain: null, analyser: null};
+const buf = new Uint8Array(512);
+
+function level(an) {
+  if (!an) return 0;
+  an.getByteTimeDomainData(buf);
+  let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; }
+  return Math.min(1, Math.sqrt(s / buf.length) * 6);
+}
+function sink(node) { const z = actx.createGain(); z.gain.value = 0; node.connect(z).connect(actx.destination); }
+
+function setupLocalMeter() {
+  const src = actx.createMediaStreamSource(localStream);
+  localAnalyser = actx.createAnalyser(); localAnalyser.fftSize = 512;
+  src.connect(localAnalyser); sink(localAnalyser);
+}
+function setupFx() {
+  // soft skin-brush noise, faded in by stroke speed
+  const len = actx.sampleRate * 2, b = actx.createBuffer(1, len, actx.sampleRate), d = b.getChannelData(0);
+  let lp = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; lp = lp * .97 + w * .03; d[i] = w * .25 + lp * 2.5; }
+  const src = actx.createBufferSource(); src.buffer = b; src.loop = true;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = .5;
+  brushGain = actx.createGain(); brushGain.gain.value = 0;
+  src.connect(bp).connect(brushGain).connect(master); src.start();
+}
+function thump(at, vol) {
+  const t = actx.currentTime + at, o = actx.createOscillator(), g = actx.createGain();
+  o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(42, t + .16);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.55 * vol, t + .012); g.gain.exponentialRampToValueAtTime(.001, t + .24);
+  o.connect(g).connect(master); o.start(t); o.stop(t + .26);
+}
+function heartbeatSound(vol = 1) { if (!actx) return; thump(0, vol); thump(.17, vol * .6); }
+function popSound() {
+  if (!actx) return;
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(980, t + .08);
+  g.gain.setValueAtTime(.18, t); g.gain.exponentialRampToValueAtTime(.001, t + .14);
+  o.connect(g).connect(master); o.start(t); o.stop(t + .15);
+}
+
+function setupRemoteAudio(stream) {
+  if (remote.stream === stream) return;
+  teardownRemoteAudio();
+  remote.stream = stream;
+  // Chrome only feeds remote WebRTC audio into Web Audio if a media element is also playing it.
+  remote.el = new Audio(); remote.el.srcObject = stream; remote.el.muted = true; remote.el.play().catch(() => {});
+  remote.src = actx.createMediaStreamSource(stream);
+  remote.panner = actx.createPanner();
+  Object.assign(remote.panner, {panningModel: 'HRTF', distanceModel: 'linear', rolloffFactor: 0, refDistance: 1, maxDistance: 10000});
+  remote.filter = actx.createBiquadFilter(); remote.filter.type = 'lowpass'; remote.filter.frequency.value = 18000;
+  remote.gain = actx.createGain(); remote.gain.gain.value = 0;
+  remote.analyser = actx.createAnalyser(); remote.analyser.fftSize = 512;
+  remote.src.connect(remote.analyser); sink(remote.analyser);
+  remote.src.connect(remote.panner).connect(remote.filter).connect(remote.gain).connect(master);
+}
+function teardownRemoteAudio() {
+  for (const k of ['src', 'panner', 'filter', 'gain', 'analyser']) { try { remote[k] && remote[k].disconnect(); } catch (e) {} remote[k] = null; }
+  if (remote.el) { remote.el.srcObject = null; remote.el = null; }
+  remote.stream = null;
+}
+function setParam(p, v) { p.setTargetAtTime(v, actx.currentTime, 0.06); }
+function setPos(node, x, y, z) {
+  if (node.positionX) { setParam(node.positionX, x); setParam(node.positionY, y); setParam(node.positionZ, z); }
+  else node.setPosition(x, y, z);
+}
+function updateAudio(me, them, yaw) {
+  if (!actx) return 0;
+  const L = actx.listener, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  setPos(L, me.x, 1.5, me.z);
+  if (L.forwardX) { setParam(L.forwardX, fx); setParam(L.forwardY, 0); setParam(L.forwardZ, fz); L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
+  else L.setOrientation(fx, 0, fz, 0, 1, 0);
+  if (!remote.panner) return 0;
+  setPos(remote.panner, them.x, 1.5, them.z);
+  const d = Math.hypot(them.x - me.x, them.z - me.z);
+  const t = Math.min(1, Math.max(0, (d - CONFIG.fullVolumeWithin) / (CONFIG.hearingRange - CONFIG.fullVolumeWithin)));
+  const g = (1 - t) * (1 - t);
+  setParam(remote.gain.gain, g * 1.6);
+  setParam(remote.filter.frequency, 18000 * Math.pow(2500 / 18000, t)); // gets muffled as it fades
+  return g;
+}
+
+/* ================= NETWORK ================= */
+let peer, dc, mc, role, roomCode, iceServers, guestTimer;
+const send = m => { if (dc && dc.open) dc.send(m); };
+
+async function getIceServers() {
+  const list = [{urls: 'stun:stun.l.google.com:19302'}, {urls: 'stun:stun.relay.metered.ca:80'}, ...CONFIG.extraIceServers];
+  if (CONFIG.meteredApp && CONFIG.meteredApiKey) {
+    try {
+      const r = await fetch(`https://${CONFIG.meteredApp}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(CONFIG.meteredApiKey)}`);
+      if (r.ok) list.push(...await r.json());
+    } catch (e) { console.warn('TURN fetch failed', e); }
+  }
+  return list;
+}
+
+function connect() {
+  if (peer && !peer.destroyed) peer.destroy();
+  const hostId = PREFIX + roomCode;
+  const opts = {config: {iceServers}, debug: 1, ...(CONFIG.peerServer || {})};
+  role = 'host';
+  peer = new Peer(hostId, opts);
+  peer.on('open', () => setStatus(`Room ${roomCode} · waiting for them`, 'wait'));
+  peer.on('connection', c => {
+    if (dc && dc.open) { c.on('open', () => { c.send({t: 'full'}); setTimeout(() => c.close(), 400); }); return; }
+    attachData(c);
+  });
+  peer.on('call', call => { if (mc) mc.close(); mc = call; call.answer(localStream); attachCall(call); });
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') { peer.destroy(); joinAsGuest(hostId, opts); }
+    else netError(err);
+  });
+  peer.on('disconnected', () => softReconnect(peer));
+}
+// the matchmaking socket dropped: the p2p link itself keeps working, just get back on the server slowly
+function softReconnect(p) {
+  setTimeout(() => { if (p === peer && !p.destroyed && p.disconnected) { if (p.id) p.reconnect(); else connect(); } }, 3000);
+}
+function joinAsGuest(hostId, opts) {
+  role = 'guest';
+  const p = peer = new Peer(opts);
+  p.on('open', () => {
+    setStatus(`Room ${roomCode} · joining…`, 'wait');
+    const c = p.connect(hostId, {serialization: 'json'});
+    attachData(c);
+    c.on('open', () => { mc = p.call(hostId, localStream); attachCall(mc); });
+    clearTimeout(guestTimer);
+    guestTimer = setTimeout(() => { if (!c.open) setStatus('Can’t reach them directly. Add a TURN key (top of file).', ''); }, 15000);
+  });
+  p.on('error', err => {
+    if (err.type === 'peer-unavailable') { setStatus(`Room ${roomCode} · retrying…`, 'wait'); setTimeout(() => { if (peer === p) connect(); }, 1500); }
+    else netError(err);
+  });
+  p.on('disconnected', () => softReconnect(p));
+}
+function netError(err) {
+  console.warn(err.type, err);
+  if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type) && !(dc && dc.open))
+    setStatus('Can’t reach the matchmaking server, retrying…', 'wait');
+}
+function attachData(c) {
+  dc = c;
+  c.on('open', () => {
+    clearTimeout(guestTimer);
+    setStatus(`Room ${roomCode} · together`, 'on');
+    $('near').style.display = 'flex'; $('acts').style.display = 'flex';
+    them.visible = true;
+  });
+  c.on('data', onData);
+  c.on('close', () => {
+    if (dc !== c) return;
+    dc = null; them.visible = false; teardownRemoteAudio();
+    themMode = 'walk'; themFT.has = false;
+    if (mode !== 'sit') setMode('walk');
+    if (mc) { mc.close(); mc = null; }
+    $('near').style.display = 'none'; $('acts').style.display = 'none';
+    toast('They left the room');
+    if (role === 'guest') connect(); else setStatus(`Room ${roomCode} · waiting for them`, 'wait');
+  });
+}
+function attachCall(call) {
+  call.on('stream', s => setupRemoteAudio(s));
+  call.on('close', teardownRemoteAudio);
+}
+const num = (v, d = 0) => (typeof v === 'number' && isFinite(v) ? v : d);
+function onData(m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 's') {
+    themTarget.x = num(m.x); themTarget.z = num(m.z); themTarget.r = num(m.r); themTarget.mv = !!m.m;
+    themMode = MODES.includes(m.mo) ? m.mo : 'walk';
+    themSeat = m.se === 0 || m.se === 1 ? m.se : -1;
+    if (themMode === 'hands' && typeof m.fx === 'number') {
+      themFT.tx = num(m.fx); themFT.ty = num(m.fy, SURF); themFT.tz = num(m.fz); themFT.c = !!m.fc;
+      if (!themFT.has) { themFT.x = themFT.tx; themFT.y = themFT.ty; themFT.z = themFT.tz; themFT.has = true; }
+    } else themFT.has = false;
+  } else if (m.t === 'beat') {
+    heartbeatSound(1); hapticBeat(); spawnHeart(them.position, 2.05, COL_THEM, 1.4);
+    const g = $('glow'); g.style.transition = 'none'; g.style.opacity = 1;
+    requestAnimationFrame(() => { g.style.transition = ''; g.style.opacity = 0; });
+  } else if (m.t === 'boop') {
+    me.userData.squish = 1; popSound(); haptic(45); spawnHeart(me.position, 1.9, COL_THEM, 1);
+  } else if (m.t === 'ask') {
+    if (m.k === 'hands') { toast('They’re reaching for your hand'); ping('bHands'); }
+    if (m.k === 'hug') { toast('They want a hug. Walk up and tap Hug'); ping('bHug'); }
+  } else if (m.t === 'full') setStatus('That room already has two people', '');
+}
+
+/* ================= SCENE ================= */
+const V3 = THREE.Vector3, UP = new V3(0, 1, 0);
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#1b1622');
+scene.fog = new THREE.Fog('#2a2233', 24, 48);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.03, 100);
+
+const RW = 28, RD = 20, WH = 3.4, SURF = .95; // room width (x), depth (z), wall height, hand-table height
+const boxes = []; // colliders {x,z,hw,hd}
+const mat = c => new THREE.MeshStandardMaterial({color: c, roughness: .85});
+function box(w, h, d, color, x, y, z, collide) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), typeof color === 'string' ? mat(color) : color);
+  m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; scene.add(m);
+  if (collide) boxes.push({x, z, hw: w / 2, hd: d / 2});
+  return m;
+}
+function canvasTex(w, h, draw) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+const softTex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.45, 'rgba(255,255,255,.6)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
+const heartTex = canvasTex(64, 64, (g) => {
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(32, 56);
+  g.bezierCurveTo(4, 38, 4, 12, 20, 10); g.bezierCurveTo(27, 9, 31, 14, 32, 18);
+  g.bezierCurveTo(33, 14, 37, 9, 44, 10); g.bezierCurveTo(60, 12, 60, 38, 32, 56); g.fill();
+});
+
+// floor: warm planks
+const planks = canvasTex(512, 512, (g, w, h) => {
+  for (let i = 0; i < 8; i++) for (let j = -1; j < 2; j++) {
+    const y = j * 256 + (i % 2) * 128, l = 44 + Math.random() * 12;
+    g.fillStyle = `hsl(28,42%,${l}%)`; g.fillRect(i * 64, y, 64, 256);
+    g.fillStyle = 'rgba(40,20,10,.35)'; g.fillRect(i * 64, y, 64, 2);
+  }
+  g.fillStyle = 'rgba(40,20,10,.35)'; for (let i = 0; i < 8; i++) g.fillRect(i * 64, 0, 2, h);
+});
+planks.wrapS = planks.wrapT = THREE.RepeatWrapping; planks.repeat.set(RW / 4, RD / 4);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(RW, RD), new THREE.MeshStandardMaterial({map: planks, roughness: .7}));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+// walls + baseboards
+const wallM = mat('#5b4060');
+box(RW, WH, .3, wallM, 0, WH / 2, -RD / 2 - .15); box(RW, WH, .3, wallM, 0, WH / 2, RD / 2 + .15);
+box(.3, WH, RD, wallM, -RW / 2 - .15, WH / 2, 0); box(.3, WH, RD, wallM, RW / 2 + .15, WH / 2, 0);
+const baseM = mat('#3b2a40');
+box(RW, .18, .06, baseM, 0, .09, -RD / 2 + .03); box(RW, .18, .06, baseM, 0, .09, RD / 2 - .03);
+box(.06, .18, RD, baseM, -RW / 2 + .03, .09, 0); box(.06, .18, RD, baseM, RW / 2 - .03, .09, 0);
+
+// night windows on the back wall
+const sky = canvasTex(256, 384, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#0d1030'); gr.addColorStop(1, '#3c2a5c');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(255,255,255,${.3 + Math.random() * .7})`; const s = Math.random() < .1 ? 2.5 : 1.2; g.fillRect(Math.random() * w, Math.random() * h * .8, s, s); }
+});
+for (const x of [-8, 0, 8]) {
+  box(2.6, 2, .12, '#2b1f2e', x, 1.9, -RD / 2 + .02);
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.75), new THREE.MeshBasicMaterial({map: sky}));
+  win.position.set(x, 1.9, -RD / 2 + .1); scene.add(win);
+  box(2.3, .06, .1, '#2b1f2e', x, 1.9, -RD / 2 + .13); box(.06, 1.75, .1, '#2b1f2e', x, 1.9, -RD / 2 + .13);
+}
+
+// rug
+const rug = new THREE.Mesh(new THREE.CircleGeometry(3.4, 48), new THREE.MeshStandardMaterial({
+  map: canvasTex(256, 256, (g) => { for (let r = 128; r > 0; r -= 16) { g.fillStyle = (r / 16) % 2 ? '#c9604a' : '#e9a86b'; g.beginPath(); g.arc(128, 128, r, 0, 7); g.fill(); } }),
+  roughness: 1}));
+rug.rotation.x = -Math.PI / 2; rug.position.set(-4, .01, 1); rug.receiveShadow = true; scene.add(rug);
+
+// couch facing the rug (two seats)
+const couchM = mat('#3e7d74');
+box(4.2, .55, 1.2, couchM, -4, .3, -3, true); box(4.2, .8, .35, couchM, -4, .85, -3.45);
+box(.35, .75, 1.2, couchM, -6.1, .5, -3); box(.35, .75, 1.2, couchM, -1.9, .5, -3);
+const SEATS = [{x: -4.44, z: -2.85}, {x: -3.56, z: -2.85}], SEAT_Y = .53;
+// round table
+const table = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, .08, 32), mat('#8a5a3c'));
+table.position.set(-4, .55, 1); table.castShadow = true; scene.add(table);
+box(.12, .55, .12, '#6b4430', -4, .27, 1); boxes.push({x: -4, z: 1, hw: .75, hd: .75});
+// bookshelf on the right wall
+box(.5, 2.4, 4, '#6b4430', RW / 2 - .3, 1.2, -4, true);
+const bookCols = ['#ff7a59', '#4fd1b5', '#ffcf8a', '#9b7ede', '#e9e2d0', '#c9604a'];
+for (let s = 0; s < 4; s++) for (let b = 0; b < 12; b++) {
+  const h = .3 + Math.random() * .18;
+  box(.32, h, .22, bookCols[(s * 5 + b) % 6], RW / 2 - .5, .15 + s * .58 + h / 2, -5.7 + b * .3);
+}
+// bench under the windows
+box(3.4, .45, .8, '#8a5a3c', 8, .23, -RD / 2 + .7, true);
+// plants
+function plant(x, z, s = 1) {
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(.32 * s, .25 * s, .5 * s, 16), mat('#c9604a'));
+  pot.position.set(x, .25 * s, z); pot.castShadow = true; scene.add(pot);
+  for (let i = 0; i < 3; i++) {
+    const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry((.45 - i * .08) * s, 0), mat(['#4f8f5a', '#3f7a4c', '#6aa86a'][i]));
+    leaf.position.set(x + (Math.random() - .5) * .2, (.75 + i * .4) * s, z + (Math.random() - .5) * .2); leaf.castShadow = true; scene.add(leaf);
+  }
+  boxes.push({x, z, hw: .35 * s, hd: .35 * s});
+}
+plant(-RW / 2 + .8, -RD / 2 + .8, 1.3); plant(RW / 2 - .8, RD / 2 - .8, 1.2); plant(4, -RD / 2 + .8); plant(-RW / 2 + .8, RD / 2 - .8);
+// lamps
+function lamp(x, z) {
+  box(.08, 1.7, .08, '#2b1f2e', x, .85, z);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(.45, .5, 24, 1, true), new THREE.MeshStandardMaterial({color: '#ffcf8a', emissive: '#ffb45c', emissiveIntensity: 1.4, side: THREE.DoubleSide}));
+  shade.position.set(x, 1.85, z); scene.add(shade);
+  const L = new THREE.PointLight('#ffc27a', 14, 13, 1.6); L.position.set(x, 1.7, z); scene.add(L);
+  boxes.push({x, z, hw: .3, hd: .3});
+}
+lamp(-7, -3.2); lamp(9, 5); lamp(1, -8.5);
+
+scene.add(new THREE.HemisphereLight('#b9a3d6', '#4a3020', .9));
+const moon = new THREE.DirectionalLight('#cdd6ff', .9);
+moon.position.set(-6, 12, -10); moon.castShadow = true;
+moon.shadow.mapSize.set(1024, 1024);
+Object.assign(moon.shadow.camera, {left: -16, right: 16, top: 12, bottom: -12, near: 1, far: 40});
+scene.add(moon);
+const handLight = new THREE.PointLight('#ffe2c0', 0, 2.5, 1.5); scene.add(handLight); // warm light over the hand table
+
+// the little table that appears between you for hands
+const handTable = new THREE.Group();
+const ht = new THREE.Mesh(new THREE.CylinderGeometry(.44, .44, .04, 40), new THREE.MeshStandardMaterial({color: '#4a3028', roughness: .6}));
+ht.position.y = SURF - .02; ht.receiveShadow = true; handTable.add(ht);
+const hl = new THREE.Mesh(new THREE.CylinderGeometry(.04, .06, SURF - .04, 12), mat('#3a2620')); hl.position.y = (SURF - .04) / 2; handTable.add(hl);
+handTable.visible = false; scene.add(handTable);
+
+// characters
+function makeBlob(color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.42, .7, 8, 20), new THREE.MeshStandardMaterial({color, roughness: .55}));
+  body.position.y = .82; body.castShadow = true; g.add(body);
+  const eyeM = new THREE.MeshStandardMaterial({color: '#1b1622', roughness: .3});
+  for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 12), eyeM); e.scale.set(1, 1.3, .6); e.position.set(s * .15, 1.12, .38); g.add(e); }
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(.55, .035, 8, 40), new THREE.MeshBasicMaterial({color, transparent: true, opacity: 0}));
+  halo.rotation.x = Math.PI / 2; halo.position.y = .05; g.add(halo);
+  g.userData = {body, halo, squish: 0};
+  scene.add(g); return g;
+}
+const COLS = {host: '#ff7a59', guest: '#4fd1b5'};
+let COL_ME = COLS.host, COL_THEM = COLS.guest;
+const me = makeBlob(COLS.host), them = makeBlob(COLS.guest);
+me.visible = false; them.visible = false;
+const myPos = {x: 0, z: 4, r: Math.PI};
+const themTarget = {x: 0, z: 4, r: Math.PI, mv: false};
+const themPos = {x: 0, z: 4, r: Math.PI};
+
+/* ================= HANDS ================= */
+// A resting LEFT hand, palm down, fingers along local +Z, wrist at the origin.
+// Thumb sits on the owner's right, which is local -X.
+const FINGERS = [[.031, .095, .07, .074, .0095], [.0105, .099, .02, .083, .0098], [-.0105, .098, -.03, .078, .0095], [-.03, .093, -.09, .062, .0088], [.04, .028, .8, .062, .0112]]
+  .map(([x, z, a, len, r]) => { x = -x; a = -a; const dx = Math.sin(a), dz = Math.cos(a), L = len - 2 * r; return {ax: x, az: z, bx: x + dx * L, bz: z + dz * L, dx, dz, L, r}; });
+const armGeo = new THREE.CylinderGeometry(.03, .036, 1, 14);
+const tint = c => new THREE.Color(c).lerp(new THREE.Color('#fff1e6'), .45);
+
+function makeRig(color) {
+  const skin = new THREE.MeshStandardMaterial({color: tint(color), roughness: .6});
+  const sleeve = new THREE.MeshStandardMaterial({color, roughness: .55});
+  const add = o => { o.visible = false; scene.add(o); return o; };
+  const rest = add(new THREE.Group());
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(.15, .24), new THREE.MeshBasicMaterial({map: softTex, color: '#000', transparent: true, opacity: .32, depthWrite: false}));
+  sh.rotation.x = -Math.PI / 2; sh.position.set(0, .0008, .07); rest.add(sh);
+  const palm = new THREE.Mesh(new RoundedBoxGeometry(.084, .026, .104, 3, .01), skin); palm.position.set(0, .013, .05); rest.add(palm);
+  for (const f of FINGERS) {
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(f.r, f.L, 6, 12), skin);
+    m.position.set((f.ax + f.bx) / 2, f.r, (f.az + f.bz) / 2); m.quaternion.setFromUnitVectors(UP, new V3(f.dx, 0, f.dz)); rest.add(m);
+  }
+  // pointing right hand: knuckles at the origin, index finger along +Z, fingertip pad centre at z=.055
+  const point = add(new THREE.Group());
+  const fist = new THREE.Mesh(new RoundedBoxGeometry(.078, .05, .07, 3, .018), skin); fist.position.set(0, 0, -.032); point.add(fist);
+  const idx = new THREE.Mesh(new THREE.CapsuleGeometry(.0085, .055, 6, 12), skin); idx.position.z = .0275; idx.quaternion.setFromUnitVectors(UP, new V3(0, 0, 1)); point.add(idx);
+  const th = new THREE.Mesh(new THREE.CapsuleGeometry(.0105, .03, 6, 10), skin); th.position.set(.036, -.006, -.012); th.quaternion.setFromUnitVectors(UP, new V3(-.35, -.2, 1).normalize()); point.add(th);
+  const arms = [0, 1].map(() => ({up: add(new THREE.Mesh(armGeo, sleeve)), lo: add(new THREE.Mesh(armGeo, sleeve)), mitt: add(new THREE.Mesh(new THREE.SphereGeometry(.05, 14, 12), skin))}));
+  return {skin, sleeve, rest, point, arms, W: new V3(), Sl: new V3(), u: new V3(), th: 0, fax: 0, faz: -1, slope: 0, on: false, pointOn: false};
+}
+const myRig = makeRig(COLS.host), themRig = makeRig(COLS.guest);
+function colourRig(rig, c) { rig.sleeve.color.set(c); rig.skin.color.copy(tint(c)); }
+function hideRig(r) { r.rest.visible = r.point.visible = r.on = r.pointOn = false; for (const a of r.arms) a.up.visible = a.lo.visible = a.mitt.visible = false; }
+const _t = new V3();
+function limb(m, a, b) {
+  _t.subVectors(b, a); const L = _t.length() || 1e-4;
+  m.position.addVectors(a, b).multiplyScalar(.5); m.quaternion.setFromUnitVectors(UP, _t.divideScalar(L)); m.scale.set(1, L, 1); m.visible = true;
+}
+const _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3();
+
+// arms + resting hand for one player. P/Q: blob positions (y = body offset), md: that player's mode
+function poseRig(rig, P, Q, md, high, cuddle) {
+  hideRig(rig);
+  const dx = Q.x - P.x, dz = Q.z - P.z, dd = Math.hypot(dx, dz) || 1, ux = dx / dd, uz = dz / dd;
+  rig.u.set(ux, 0, uz);
+  const side = [[uz, -ux], [-uz, ux]]; // left, right
+  const shoulder = (i, out) => out.set(P.x + side[i][0] * .3, P.y + 1.05, P.z + side[i][1] * .3);
+  if (md === 'hands') {
+    const [lx, lz] = side[0];
+    rig.W.set(P.x + ux * .72 + lx * .09, SURF, P.z + uz * .72 + lz * .09);
+    rig.th = Math.atan2(ux, uz); rig.rest.position.copy(rig.W); rig.rest.rotation.y = rig.th; rig.rest.visible = rig.on = true;
+    shoulder(0, rig.Sl);
+    limb(rig.arms[0].up, rig.Sl, _a.set(rig.W.x - ux * .012, SURF + .026, rig.W.z - uz * .012));
+    // forearm direction in the hand's local frame, for touch tests
+    const fx = rig.Sl.x - rig.W.x, fz = rig.Sl.z - rig.W.z, fl = Math.hypot(fx, fz) || 1, c = Math.cos(rig.th), s = Math.sin(rig.th);
+    rig.fax = (fx * c - fz * s) / fl; rig.faz = (fx * s + fz * c) / fl; rig.slope = (rig.Sl.y - SURF - .026) / fl;
+  } else if (md === 'hugwait' || md === 'hug') {
+    const sway = Math.sin(performance.now() * .003) * .03;
+    for (let i = 0; i < 2; i++) {
+      const [sx, sz] = side[i]; shoulder(i, _a);
+      if (md === 'hugwait') { _b.set(P.x + sx * .55 + ux * .15, P.y + 1.2 + sway, P.z + sz * .55 + uz * .15); _c.set(P.x + sx * .5 + ux * .45, P.y + 1.45 + sway, P.z + sz * .5 + uz * .45); }
+      else {
+        const h = P.y + (high ? 1.24 : .98) + i * .05;
+        _b.set(Q.x + sx * .47 - ux * .05, h, Q.z + sz * .47 - uz * .05);
+        _c.set(Q.x + ux * .34 + sx * .11, h + .04, Q.z + uz * .34 + sz * .11);
+      }
+      const a = rig.arms[i]; limb(a.up, _a, _b); limb(a.lo, _b, _c); a.mitt.position.copy(_c); a.mitt.visible = true;
+    }
+  } else if (md === 'sit' && cuddle) {
+    // arm around their shoulders (seated, both facing +z, so their back is -z)
+    shoulder(1, _a); _a.set(P.x + ux * .26, P.y + 1.1, P.z + uz * .26);
+    _b.set(Q.x - ux * .05, Q.y + 1.32, Q.z - .36);
+    _c.set(Q.x + ux * .3, Q.y + 1.22, Q.z - .04);
+    const a = rig.arms[1]; limb(a.up, _a, _b); limb(a.lo, _b, _c); a.mitt.position.copy(_c); a.mitt.visible = true;
+  }
+}
+// pointing hand + arm; ft = fingertip pad centre
+function posePoint(rig, P, ft) {
+  const ux = rig.u.x, uz = rig.u.z;
+  const S = _a.set(P.x - uz * .3, P.y + 1.05, P.z + ux * .3);
+  let hx = ft.x - S.x, hz = ft.z - S.z; const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
+  const dir = _b.set(hx * .77, -.64, hz * .77);
+  const K = _c.set(ft.x - dir.x * .055, ft.y - dir.y * .055, ft.z - dir.z * .055);
+  rig.point.position.copy(K); rig.point.lookAt(ft.x, ft.y, ft.z); rig.point.visible = rig.pointOn = true;
+  limb(rig.arms[1].up, S, _d.set(K.x - dir.x * .068, K.y - dir.y * .068, K.z - dir.z * .068));
+}
+function segProj(px, pz, ax, az, bx, bz) {
+  const vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1e-9;
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (pz - az) * vz) / l2));
+  return {d: Math.hypot(px - ax - vx * t, pz - az - vz * t), t};
+}
+// height of a resting hand's skin above the table at a world (x,z), or -1 if not over it
+function touchTest(rig, x, z) {
+  if (!rig.on) return -1;
+  const dx = x - rig.W.x, dz = z - rig.W.z, c = Math.cos(rig.th), s = Math.sin(rig.th);
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  let h = -1;
+  if (Math.abs(lx) <= .04 && lz >= 0 && lz <= .1) h = .026;
+  for (const f of FINGERS) { const {d} = segProj(lx, lz, f.ax, f.az, f.bx, f.bz); if (d < f.r) h = Math.max(h, f.r + Math.sqrt(f.r * f.r - d * d)); }
+  const FA = .17, p = segProj(lx, lz, 0, 0, rig.fax * FA, rig.faz * FA), r = .03; // sleeve near the wrist
+  if (p.d < r) h = Math.max(h, .026 + p.t * FA * rig.slope + Math.sqrt(r * r - p.d * p.d));
+  return h;
+}
+
+// glowing trail marks left on skin, and floating hearts
+const trailGeo = new THREE.PlaneGeometry(.022, .022);
+const trails = Array.from({length: 140}, () => {
+  const m = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({map: softTex, transparent: true, depthWrite: false, opacity: 0}));
+  m.rotation.x = -Math.PI / 2; m.visible = false; m.renderOrder = 2; m.userData.age = 9; scene.add(m); return m;
+});
+let trailI = 0;
+function spawnTrail(x, y, z, color) {
+  const m = trails[trailI = (trailI + 1) % trails.length];
+  m.position.set(x, y, z); m.material.color.set(color).multiplyScalar(1.15); m.userData.age = 0; m.visible = true;
+}
+const hearts = Array.from({length: 24}, () => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({map: heartTex, transparent: true, depthWrite: false, opacity: 0}));
+  s.visible = false; s.userData = {age: 9, base: new V3(), size: 1}; scene.add(s); return s;
+});
+let heartI = 0;
+function spawnHeart(pos, h, color, size) {
+  const s = hearts[heartI = (heartI + 1) % hearts.length];
+  s.userData.base.set(pos.x + (Math.random() - .5) * .2, (pos.y || 0) + h, pos.z + (Math.random() - .5) * .2);
+  s.userData.age = 0; s.userData.size = size; s.material.color.set(color); s.visible = true;
+}
+// hover rings: where a lifted fingertip will land
+const ringGeo = new THREE.RingGeometry(.007, .0105, 28);
+const mkRing = () => { const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({color: '#fff', transparent: true, opacity: .75, depthWrite: false})); m.rotation.x = -Math.PI / 2; m.visible = false; m.renderOrder = 3; scene.add(m); return m; };
+const ringMe = mkRing(), ringThem = mkRing();
+
+/* ================= STATE ================= */
+let mode = 'walk', mySeat = -1, themMode = 'walk', themSeat = -1;
+let hugSince = 0, hugBeatT = 0, camBlend = 0, handZoom = .4, lastDist = 99;
+const myFT = {x: 0, y: SURF, z: 0, c: false, ax: 0, az: 0};
+const themFT = {x: 0, y: SURF, z: 0, c: false, tx: 0, ty: SURF, tz: 0, has: false};
+const ptr = {x: 0, y: 0, has: false, down: false, id: null, type: 'mouse'};
+const fbMe = {px: 0, pz: 0, acc: 0, hacc: 0, speed: 0, was: false}, fbThem = {px: 0, pz: 0, acc: 0, hacc: 0, speed: 0, was: false};
+
+function setMode(m) {
+  if (m === mode) return;
+  const prev = mode; mode = m; camBlend = .9;
+  me.visible = m !== 'hands';
+  if (m !== 'sit') mySeat = -1;
+  if (m === 'hands') {
+    const ux = themPos.x - myPos.x, uz = themPos.z - myPos.z, l = Math.hypot(ux, uz) || 1;
+    myFT.ax = myPos.x + ux / l * .86 - uz / l * .05; myFT.az = myPos.z + uz / l * .86 + ux / l * .05;
+    ptr.has = false; ptr.down = false;
+    if (themMode !== 'hands') send({t: 'ask', k: 'hands'});
+    showHelp(coarse ? 'Touch and drag to stroke their hand · lift to hover' : 'Move to aim · hold the mouse button to touch · scroll to lean in');
+  }
+  if (m === 'hugwait') { hugSince = performance.now(); if (themMode !== 'hugwait' && themMode !== 'hug') send({t: 'ask', k: 'hug'}); showHelp('Arms open… waiting for a hug back'); }
+  if (m === 'hug') { hugBeatT = 0; haptic(40); showHelp('Hugging · move to let go'); }
+  if (m === 'sit') showHelp(themMode === 'sit' ? 'Cuddled up · move to stand' : 'Sitting · move to stand up');
+  if (m === 'walk' && prev !== 'walk') showHelp(HELP_WALK);
+  stick.id = look.id = null; stick.x = stick.y = 0; stickEl.style.display = 'none';
+  updateButtons(); sendState();
+}
+function updateButtons() {
+  const set = (id, on, label) => { const b = $(id); b.classList.toggle('on', on); b.querySelector('span').textContent = label; if (on) b.classList.remove('ping'); };
+  set('bHands', mode === 'hands', mode === 'hands' ? 'Stand back' : 'Hands');
+  set('bHug', mode === 'hug' || mode === 'hugwait', mode === 'hug' ? 'Let go' : mode === 'hugwait' ? 'Cancel' : 'Hug');
+  set('bSit', mode === 'sit', mode === 'sit' ? 'Stand' : 'Sit');
+  $('bHug').style.display = mode === 'hands' || mode === 'sit' ? 'none' : '';
+  $('bHands').style.display = mode === 'sit' || mode === 'hug' || mode === 'hugwait' ? 'none' : '';
+}
+function sendState() {
+  if (!dc || !dc.open) return;
+  const m = {t: 's', x: +myPos.x.toFixed(3), z: +myPos.z.toFixed(3), r: +myPos.r.toFixed(3), m: movingNow, mo: mode, se: mySeat};
+  if (mode === 'hands') { m.fx = +myFT.x.toFixed(4); m.fy = +myFT.y.toFixed(4); m.fz = +myFT.z.toFixed(4); m.fc = myFT.c; }
+  dc.send(m);
+}
+function nearCouch() { return Math.abs(myPos.x + 4) < 2.6 && myPos.z > -3.7 && myPos.z < -.6; }
+
+/* ================= INPUT ================= */
+const keys = {};
+addEventListener('keydown', e => { if (e.target === codeIn) return; keys[e.code] = true; });
+addEventListener('keyup', e => keys[e.code] = false);
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+let yaw = 0, pitch = .38, movingNow = false;
+const stick = {id: null, ox: 0, oy: 0, x: 0, y: 0}, look = {id: null, lx: 0, ly: 0};
+const taps = new Map();
+const stickEl = $('stick'), knob = $('knob');
+canvas.addEventListener('pointerdown', e => {
+  if (actx && actx.state !== 'running') actx.resume();
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  if (mode === 'hands') { Object.assign(ptr, {x: e.clientX, y: e.clientY, has: true, down: true, id: e.pointerId, type: e.pointerType}); return; }
+  taps.set(e.pointerId, {x: e.clientX, y: e.clientY, t: performance.now()});
+  if (e.pointerType === 'touch' && e.clientX < innerWidth * .45 && stick.id === null) {
+    Object.assign(stick, {id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0});
+    stickEl.style.display = 'block'; stickEl.style.left = e.clientX + 'px'; stickEl.style.top = e.clientY + 'px';
+    knob.style.transform = '';
+  } else if (look.id === null) Object.assign(look, {id: e.pointerId, lx: e.clientX, ly: e.clientY});
+});
+canvas.addEventListener('pointermove', e => {
+  if (mode === 'hands') {
+    if (e.pointerId === ptr.id || (e.pointerType === 'mouse' && ptr.id === null)) Object.assign(ptr, {x: e.clientX, y: e.clientY, has: true, type: e.pointerType});
+    return;
+  }
+  if (e.pointerId === stick.id) {
+    let dx = e.clientX - stick.ox, dy = e.clientY - stick.oy; const m = Math.hypot(dx, dy), R = 50;
+    if (m > R) { dx *= R / m; dy *= R / m; }
+    stick.x = dx / R; stick.y = dy / R; knob.style.transform = `translate(${dx}px,${dy}px)`;
+  } else if (e.pointerId === look.id) {
+    yaw -= (e.clientX - look.lx) * .006; pitch = Math.min(1.1, Math.max(.12, pitch + (e.clientY - look.ly) * .004));
+    look.lx = e.clientX; look.ly = e.clientY;
+  }
+});
+function endPtr(e) {
+  if (e.pointerId === ptr.id) { ptr.down = false; ptr.id = null; }
+  if (e.pointerId === stick.id) { stick.id = null; stick.x = stick.y = 0; stickEl.style.display = 'none'; }
+  if (e.pointerId === look.id) look.id = null;
+  const t = taps.get(e.pointerId); taps.delete(e.pointerId);
+  if (t && e.type === 'pointerup' && mode !== 'hands' && performance.now() - t.t < 350 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 9) tryBoop(e.clientX, e.clientY);
+}
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', e => { if (mode === 'hands') { handZoom = Math.min(1, Math.max(0, handZoom - e.deltaY * .001)); e.preventDefault(); } }, {passive: false});
+
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(UP, -(SURF + .01)), _p = new V3();
+function tryBoop(x, y) {
+  if (!them.visible) return;
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(them.userData.body, false)[0];
+  if (!hit) return;
+  if (lastDist > 3.2) { toast('Get closer to boop them'); return; }
+  send({t: 'boop'}); them.userData.squish = 1; popSound(); haptic(15); spawnHeart(them.position, 1.9, COL_ME, 1);
+}
+
+/* ================= COLLISION ================= */
+const R = .45;
+function collide(p, other) {
+  p.x = Math.min(RW / 2 - R, Math.max(-RW / 2 + R, p.x));
+  p.z = Math.min(RD / 2 - R, Math.max(-RD / 2 + R, p.z));
+  for (const b of boxes) {
+    const cx = Math.max(b.x - b.hw, Math.min(p.x, b.x + b.hw)), cz = Math.max(b.z - b.hd, Math.min(p.z, b.z + b.hd));
+    const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
+    if (d < R) {
+      if (d > 1e-4) { p.x = cx + dx / d * R; p.z = cz + dz / d * R; }
+      else {
+        const ox = b.hw - Math.abs(p.x - b.x), oz = b.hd - Math.abs(p.z - b.z);
+        if (ox < oz) p.x = b.x + Math.sign(p.x - b.x || 1) * (b.hw + R); else p.z = b.z + Math.sign(p.z - b.z || 1) * (b.hd + R);
+      }
+    }
+  }
+  if (other) {
+    const dx = p.x - other.x, dz = p.z - other.z, d = Math.hypot(dx, dz);
+    if (d < R * 2 && d > 1e-4) { p.x = other.x + dx / d * R * 2; p.z = other.z + dz / d * R * 2; }
+  }
+}
+
+/* ================= TOUCH FEEDBACK ================= */
+// st: per-finger state; kind: 'get' (my hand is being touched), 'give' (I'm touching theirs), null
+function stroke(st, ft, h, color, kind, dt) {
+  const moved = Math.hypot(ft.x - st.px, ft.z - st.pz);
+  const touching = ft.c && h >= 0;
+  if (touching && !st.was && kind) haptic(kind === 'get' ? 22 : 10);
+  if (touching) {
+    st.speed += (moved / Math.max(dt, 1e-3) - st.speed) * .25;
+    st.acc += moved;
+    const n = Math.min(12, Math.floor(st.acc / .0035));
+    for (let i = 1; i <= n; i++) { const k = i / n; spawnTrail(st.px + (ft.x - st.px) * k, SURF + h + .0012, st.pz + (ft.z - st.pz) * k, color); }
+    if (n) st.acc -= n * .0035;
+    if (!st.was) spawnTrail(ft.x, SURF + h + .0012, ft.z, color);
+    st.hacc += moved;
+    if (kind === 'get' && st.hacc > .006) { st.hacc = 0; haptic(12); }
+    if (kind === 'give' && st.hacc > .012) { st.hacc = 0; haptic(6); }
+  } else { st.speed *= .8; st.acc = 0; }
+  st.px = ft.x; st.pz = ft.z; st.was = touching;
+  return touching ? st.speed : 0;
+}
+
+/* ================= LOOP ================= */
+let last = performance.now(), sendAcc = 0, walkT = 0, themWalkT = 0;
+const camPos = new V3(0, 6, 13), camLook = new V3(0, 1, 0), wantPos = new V3(), wantLook = new V3();
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+const angLerp = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function blobPose(g, pos, md, seat, otherSat, walking, wt, dt) {
+  let y = walking ? Math.abs(Math.sin(wt)) * .12 : 0, lean = 0;
+  if (md === 'sit') { y = SEAT_Y; if (otherSat) lean = seat === 0 ? -.15 : .15; }
+  g.position.set(pos.x, y, pos.z); g.rotation.y = pos.r;
+  g.rotation.z += (lean - g.rotation.z) * Math.min(1, dt * 5);
+  const q = g.userData.squish = Math.max(0, g.userData.squish - dt * 2.5), sq = Math.sin(q * Math.PI);
+  const hug = md === 'hug' ? 1 : 0, step = walking ? Math.abs(Math.sin(wt)) * .05 : 0;
+  g.userData.body.scale.set((1 + .14 * sq) * (1 + .04 * hug), (1 - .16 * sq) * (1 - .02 * hug) * (1 - step) * (md === 'sit' ? .94 : 1), (1 + .14 * sq) * (1 - .1 * hug));
+}
+
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const haveThem = them.visible;
+  let ux = themPos.x - myPos.x, uz = themPos.z - myPos.z; const dist = Math.hypot(ux, uz) || 1e-6; ux /= dist; uz /= dist;
+  lastDist = haveThem ? dist : 99;
+
+  // shared-mode transitions
+  if (!haveThem && mode !== 'walk' && mode !== 'sit') setMode('walk');
+  if (mode === 'hugwait' && (themMode === 'hugwait' || themMode === 'hug') && dist < 2.6) setMode('hug');
+  if (mode === 'hug' && themMode !== 'hug' && themMode !== 'hugwait') setMode('walk');
+  if (mode === 'hugwait' && now - hugSince > 25000) { setMode('walk'); toast('No hug back this time'); }
+  if (mode === 'sit' && themMode === 'sit' && themSeat === mySeat && role === 'guest') { mySeat = 1 - mySeat; } // same seat at once: guest scoots over
+
+  // input
+  let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stick.x;
+  let iy = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stick.y;
+  if (keys.KeyQ) yaw += dt * 2; if (keys.KeyE) yaw -= dt * 2;
+  const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
+  if (im > .08 && (mode === 'hug' || mode === 'sit')) { if (mode === 'sit') myPos.z = -1.5; setMode('walk'); }
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  const mx = fx * iy + rx * ix, mz = fz * iy + rz * ix;
+  movingNow = false;
+  if (mode === 'walk' || mode === 'hugwait') {
+    movingNow = im > .08;
+    if (movingNow) {
+      const speed = keys.ShiftLeft ? 6 : 3.6;
+      myPos.x += mx * speed * dt; myPos.z += mz * speed * dt;
+      myPos.r = angLerp(myPos.r, Math.atan2(mx, mz), 1 - Math.exp(-dt * 12));
+      walkT += dt * 9;
+    } else if (mode === 'hugwait' && haveThem) myPos.r = angLerp(myPos.r, Math.atan2(ux, uz), 1 - Math.exp(-dt * 6));
+  } else if (mode === 'hands' || mode === 'hug') {
+    const want = mode === 'hands' ? 1.8 : .78, k = mode === 'hands' ? 1 : .5; // in a hug you each close half the gap
+    const step = clamp((dist - want) * k, -3 * dt, 3 * dt);
+    myPos.x += ux * step; myPos.z += uz * step;
+    myPos.r = angLerp(myPos.r, Math.atan2(ux, uz), 1 - Math.exp(-dt * 8));
+  } else if (mode === 'sit') {
+    const s = SEATS[mySeat]; myPos.x += (s.x - myPos.x) * .2; myPos.z += (s.z - myPos.z) * .2; myPos.r = angLerp(myPos.r, 0, .2);
+  }
+  if (mode !== 'sit') collide(myPos, haveThem && mode !== 'hug' && themMode !== 'sit' ? themPos : null);
+
+  // remote smoothing
+  const k = 1 - Math.exp(-dt * 12);
+  themPos.x += (themTarget.x - themPos.x) * k; themPos.z += (themTarget.z - themPos.z) * k;
+  themPos.r = angLerp(themPos.r, themTarget.r, k);
+  if (themTarget.mv) themWalkT += dt * 9;
+  if (themFT.has) { const kf = 1 - Math.exp(-dt * 25); themFT.x += (themFT.tx - themFT.x) * kf; themFT.y += (themFT.ty - themFT.y) * kf; themFT.z += (themFT.tz - themFT.z) * kf; }
+
+  const bothSit = mode === 'sit' && themMode === 'sit';
+  blobPose(me, myPos, mode, mySeat, bothSit, movingNow, walkT, dt);
+  blobPose(them, themPos, themMode, themSeat, bothSit, themTarget.mv, themWalkT, dt);
+
+  // arms and resting hands
+  poseRig(myRig, me.position, them.position, haveThem ? mode : 'walk', role === 'guest', bothSit && mySeat === 0);
+  poseRig(themRig, them.position, me.position, haveThem ? themMode : 'walk', role !== 'guest', bothSit && themSeat === 0);
+
+  // little table between you while either is reaching out
+  handTable.visible = haveThem && (mode === 'hands' || themMode === 'hands');
+  if (handTable.visible) {
+    let cx = 0, cz = 0, n = 0;
+    if (mode === 'hands') { cx += myPos.x + ux * .9; cz += myPos.z + uz * .9; n++; }
+    if (themMode === 'hands') { cx += themPos.x - ux * .9; cz += themPos.z - uz * .9; n++; }
+    handTable.position.set(cx / n, 0, cz / n);
+  }
+  handLight.intensity = handTable.visible ? 1.6 : 0; handLight.position.set(handTable.position.x, 1.7, handTable.position.z);
+
+  // camera
+  if (mode === 'hands') {
+    const e = .26 + .2 * handZoom;
+    wantPos.set(myPos.x + ux * e, 1.38 - .1 * handZoom, myPos.z + uz * e);
+    wantLook.set(myPos.x + ux * .9, SURF, myPos.z + uz * .9);
+  } else {
+    const d = mode === 'sit' || mode === 'hug' ? 4.6 : 6.2, by = me.position.y;
+    let cx = myPos.x + Math.sin(yaw) * Math.cos(pitch) * d, cz = myPos.z + Math.cos(yaw) * Math.cos(pitch) * d;
+    cx = clamp(cx, -RW / 2 + .3, RW / 2 - .3); cz = clamp(cz, -RD / 2 + .3, RD / 2 - .3);
+    wantPos.set(cx, Math.min(WH - .2, 1.1 + by + Math.sin(pitch) * d), cz);
+    wantLook.set(myPos.x, 1.1 + by * .6, myPos.z);
+  }
+  camBlend = Math.max(0, camBlend - dt);
+  const kc = camBlend > 0 ? 1 - Math.exp(-dt * 7) : 1;
+  camPos.lerp(wantPos, kc); camLook.lerp(wantLook, kc);
+  camera.position.copy(camPos); camera.lookAt(camLook);
+  const wantFov = mode === 'hands' ? (camera.aspect < 1 ? 60 : 46) : (camera.aspect < 1 ? 72 : 60);
+  if (Math.abs(camera.fov - wantFov) > .05) { camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
+
+  // my fingertip: exactly where you point, on the table or on skin
+  let getSpeed = 0, giveSpeed = 0;
+  ringMe.visible = ringThem.visible = false;
+  if (mode === 'hands' && haveThem) {
+    if (ptr.has) {
+      ndc.set(ptr.x / innerWidth * 2 - 1, -((ptr.y - (ptr.type === 'touch' ? 44 : 0)) / innerHeight) * 2 + 1); // lift above a thumb on touch
+      ray.setFromCamera(ndc, camera);
+      if (ray.ray.intersectPlane(plane, _p)) { myFT.ax = _p.x; myFT.az = _p.z; }
+    }
+    // keep it within reach of the right shoulder and in front of you
+    const sx = myPos.x - uz * .3, sz = myPos.z + ux * .3;
+    let ax = myFT.ax - sx, az = myFT.az - sz; const al = Math.hypot(ax, az);
+    if (al > 1.2) { ax *= 1.2 / al; az *= 1.2 / al; }
+    let tx = sx + ax, tz = sz + az;
+    const fwd = (tx - myPos.x) * ux + (tz - myPos.z) * uz; if (fwd < .45) { tx += ux * (.45 - fwd); tz += uz * (.45 - fwd); }
+    myFT.x = tx; myFT.z = tz; myFT.c = ptr.down;
+    const hThem = touchTest(themRig, tx, tz), hMine = touchTest(myRig, tx, tz), h = Math.max(hThem, hMine, -1);
+    const ty = SURF + Math.max(h, 0) + .0085 + (myFT.c ? 0 : .04);
+    myFT.y += (ty - myFT.y) * (1 - Math.exp(-dt * 30));
+    posePoint(myRig, me.position, myFT);
+    if (!myFT.c) { ringMe.visible = true; ringMe.position.set(tx, SURF + Math.max(h, 0) + .0015, tz); }
+    giveSpeed = stroke(fbMe, myFT, h, COL_ME, hThem >= 0 ? 'give' : null, dt);
+  }
+  if (themMode === 'hands' && themFT.has && haveThem) {
+    posePoint(themRig, them.position, themFT);
+    const hMine = touchTest(myRig, themFT.x, themFT.z), hTheirs = touchTest(themRig, themFT.x, themFT.z), h = Math.max(hMine, hTheirs, -1);
+    if (!themFT.c) { ringThem.visible = true; ringThem.position.set(themFT.x, SURF + Math.max(h, 0) + .0015, themFT.z); }
+    getSpeed = stroke(fbThem, themFT, h, COL_THEM, hMine >= 0 ? 'get' : null, dt) * (hMine >= 0 ? 1 : 0);
+  }
+  if (brushGain) setParam(brushGain.gain, Math.min(1, getSpeed / .2) * .11 + Math.min(1, giveSpeed / .2) * .035);
+
+  // hug: slow shared heartbeat on both phones
+  if (mode === 'hug' && now - hugBeatT > 1050) { hugBeatT = now; hapticBeat(); heartbeatSound(.35); }
+
+  // speaking halos
+  const myLvl = micMuted ? 0 : level(localAnalyser), thLvl = level(remote.analyser);
+  for (const [g, l] of [[me, myLvl], [them, thLvl]]) {
+    const hh = g.userData.halo; hh.material.opacity += (Math.min(.9, l * 1.4) - hh.material.opacity) * .35;
+    const s = 1 + l * .5; hh.scale.set(s, s, s);
+  }
+  $('mic').querySelector('.ring').style.opacity = Math.min(1, myLvl * 1.6);
+
+  // trails + hearts
+  for (const m of trails) if (m.visible) {
+    const a = m.userData.age += dt; if (a > 1.6) { m.visible = false; continue; }
+    m.material.opacity = .9 * (1 - a / 1.6); const s = 1 + a * .6; m.scale.set(s, s, 1);
+  }
+  for (const s of hearts) if (s.visible) {
+    const a = s.userData.age += dt; if (a > 1.4) { s.visible = false; continue; }
+    const z = s.userData.size * (.18 + .1 * Math.sin(Math.min(1, a * 3) * Math.PI / 2));
+    s.position.copy(s.userData.base).y += a * .45; s.scale.set(z, z, 1); s.material.opacity = Math.min(1, (1.4 - a) * 2);
+  }
+
+  // positional voice + hud
+  const listenYaw = mode === 'hands' || mode === 'hug' ? Math.atan2(-ux, -uz) : yaw;
+  if (haveThem) {
+    const g = updateAudio(myPos, themPos, listenYaw);
+    $('dist').textContent = dist < 1.9 ? 'right here' : `${dist.toFixed(1)} m` + (g < .01 ? ' · out of earshot' : '');
+    $('vol').firstChild.style.width = (g * 100).toFixed(0) + '%';
+  } else updateAudio(myPos, myPos, listenYaw);
+  $('bSit').style.display = mode === 'sit' || (mode === 'walk' && nearCouch()) ? '' : 'none';
+
+  sendAcc += dt;
+  if (sendAcc > (mode === 'hands' ? 1 / 40 : 1 / 15)) { sendAcc = 0; sendState(); }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+/* ================= START ================= */
+goBtn.addEventListener('click', async () => {
+  roomCode = codeIn.value.trim().toUpperCase();
+  if (roomCode.length < 3) { codeIn.focus(); return; }
+  goBtn.disabled = true; goBtn.textContent = '…';
+  // audio context must be created inside the tap (iOS)
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  actx.resume();
+  master = actx.createGain(); master.connect(actx.destination);
+  setupFx();
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}, video: false});
+  } catch (e) {
+    micDenied = true; localStream = actx.createMediaStreamDestination().stream; // silent stream so they can still talk to you
+  }
+  setupLocalMeter();
+  history.replaceState(null, '', '#' + roomCode);
+  iceServers = await getIceServers();
+  $('lobby').style.display = 'none'; $('hud').style.display = 'block';
+  if (micDenied) { toast('No mic access, you can listen only'); $('mic').classList.add('off'); $('slash').style.display = ''; }
+  setStatus('Connecting…', 'wait');
+  showHelp(HELP_WALK);
+  connect();
+  me.visible = true;
+  myPos.x = (Math.random() - .5) * 6; myPos.z = 5;
+  requestAnimationFrame(t => { last = t; frame(t); });
+  const fixColours = setInterval(() => {
+    if (!peer || !peer.open) return;
+    clearInterval(fixColours);
+    myPos.x = role === 'host' ? -2 : 2;
+    COL_ME = COLS[role]; COL_THEM = COLS[role === 'host' ? 'guest' : 'host'];
+    for (const [g, c] of [[me, COL_ME], [them, COL_THEM]]) { g.userData.body.material.color.set(c); g.userData.halo.material.color.set(c); }
+    colourRig(myRig, COL_ME); colourRig(themRig, COL_THEM);
+  }, 200);
+});
+
+$('mic').addEventListener('click', () => {
+  if (micDenied) { toast('The browser blocked the mic for this page'); return; }
+  micMuted = !micMuted;
+  localStream.getAudioTracks().forEach(t => t.enabled = !micMuted);
+  $('mic').classList.toggle('off', micMuted); $('slash').style.display = micMuted ? '' : 'none';
+  toast(micMuted ? 'Mic muted' : 'Mic on');
+});
+$('link').addEventListener('click', async () => {
+  const url = location.href.split('#')[0] + '#' + roomCode;
+  try { await navigator.clipboard.writeText(url); toast('Invite link copied'); }
+  catch (e) { toast(url, 6000); }
+});
+$('bHands').addEventListener('click', () => {
+  if (mode === 'hands') { setMode('walk'); return; }
+  if (lastDist > 6) { toast('Walk closer to them first'); return; }
+  setMode('hands');
+});
+$('bHug').addEventListener('click', () => {
+  if (mode === 'hug' || mode === 'hugwait') { setMode('walk'); return; }
+  if (lastDist > 2.6) { toast('Walk right up to them first'); return; }
+  setMode('hugwait');
+});
+$('bSit').addEventListener('click', () => {
+  if (mode === 'sit') { myPos.z = -1.5; setMode('walk'); return; }
+  const taken = themMode === 'sit' ? themSeat : -1;
+  const free = [0, 1].filter(i => i !== taken).sort((a, b) => Math.hypot(SEATS[a].x - myPos.x, SEATS[a].z - myPos.z) - Math.hypot(SEATS[b].x - myPos.x, SEATS[b].z - myPos.z));
+  mySeat = free[0]; setMode('sit'); mySeat = free[0]; sendState();
+});
+let beatHinted = false;
+$('bBeat').addEventListener('click', () => {
+  if (!beatHinted) { beatHinted = true; toast('Tap along with your own pulse. They feel every beat.', 4000); }
+  send({t: 'beat'}); haptic(12); spawnHeart(me.position, 2.05, COL_ME, .9);
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && actx && actx.state !== 'running') actx.resume(); });
+
+camera.position.copy(camPos); camera.lookAt(camLook);
+renderer.render(scene, camera);
+
+// handy in the browser console when testing: earshotDebug()
+window.earshotDebug = () => {
+  const scr = (rig, z) => { if (!rig.on) return null; const v = rig.rest.localToWorld(new V3(0, .02, z)).project(camera); return {x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight}; };
+  return {mode, themMode, mySeat, themSeat, dist: lastDist, myFT: {...myFT}, themFT: {...themFT},
+    trails: trails.filter(t => t.visible).length, theirPalm: scr(themRig, .05), theirFinger: scr(themRig, .14), myPalm: scr(myRig, .05)};
+};
+</script>
+</body>
+</html>
